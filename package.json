@@ -1,0 +1,15 @@
+{
+  "name": "duet-send",
+  "version": "0.1.0",
+  "description": "Send a message from your computer to your Claude Duet coordinator with claude -p --cloud",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "duet": "bun run send.ts",
+    "check": "bun build send.ts --target=bun --outdir=dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
