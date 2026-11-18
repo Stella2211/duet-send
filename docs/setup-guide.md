@@ -247,7 +247,7 @@ If the message may start with `-`, put `--` before it: `bun run duet -- "-5 test
 
 **Scheduled runs (cron, launchd, Task Scheduler, a bot service).** These don't read `~/.zshrc` or your user PATH. Use full paths everywhere, and set the variables in the job itself:
 
-- the full path to `bun` (macOS: `~/.bun/bin/bun`; Windows: `%USERPROFILE%\.bun\bin\bun.exe`)
+- the full path to `bun`: check it with `which bun` (macOS) or `(Get-Command bun).Source` (PowerShell). It depends on how you installed Bun; the official installer uses `~/.bun/bin/bun` and `%USERPROFILE%\.bun\bin\bun.exe`
 - `DUET_CLAUDE_BIN` set to the full path of `claude` (or `claude.exe`)
 - `DUET_GWS_BIN` set to the full path of `gws`, if you use Option B
 - any other variables you use, such as `DUET_DISCORD_WEBHOOK`
@@ -297,9 +297,31 @@ If the file already exists, add the `"hooks"` part to it instead of replacing th
 
 `hooks/hooks.json` is the format for hooks bundled in a Claude Code [plugin](https://code.claude.com/docs/en/plugins/overview). For your own computer, `settings.json` is simpler; a plugin's `hooks/hooks.json` uses the same `{"hooks": {...}}` block, with an optional `"description"` beside it.
 
+### First, find the two full paths
+
+The hook needs the full path to `bun` and the full path to `send.ts`. Look them up on your computer instead of copying the examples below: where `bun` lives depends on how you installed it. The official installer puts it in `~/.bun/bin/`, but Homebrew, npm and version managers put it somewhere else.
+
+macOS (run the second line in the duet-send folder):
+
+```sh
+which bun
+echo "$PWD/send.ts"
+```
+
+Windows PowerShell (run the second line in the duet-send folder):
+
+```powershell
+(Get-Command bun).Source
+(Resolve-Path .\send.ts).Path
+```
+
+In Command Prompt, `where.exe bun` shows the path to `bun` (use the line that ends in `.exe`).
+
+Write the full paths exactly as printed. The hook starts `bun` without a shell, so `~`, `$HOME` and `%USERPROFILE%` would not be expanded. If Claude Code later can't start the `bun` you found (for example, because it is a launcher from a version manager), use the path that `bun -e "console.log(process.execPath)"` prints; that is the `bun` program itself.
+
 ### The entry
 
-macOS (replace `you` and the paths with yours; `which bun` shows the path to `bun`):
+macOS (put your two paths in place of the examples):
 
 ```json
 {
@@ -320,7 +342,7 @@ macOS (replace `you` and the paths with yours; `which bun` shows the path to `bu
 }
 ```
 
-Windows (in JSON, each `\` in a path is written `\\`; `where.exe bun` shows the path to `bun.exe`):
+Windows (in JSON, each `\` in a path is written `\\`):
 
 ```json
 {
@@ -366,13 +388,21 @@ The hook runs with Claude Code's environment, so the variables from step 6 apply
 
 ### Check it
 
-1. Run the hook by hand with a sample of what Claude Code sends. This sends nothing:
+1. Run the hook by hand, with exactly the two paths you wrote in `"command"` and `"args"`, and a sample of what Claude Code sends. This checks those paths and sends nothing.
+
+   macOS:
 
    ```sh
-   echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | bun /path/to/duet-send/send.ts --hook --dry-run
+   echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --hook --dry-run
    ```
 
-   In PowerShell, the same line works with the full path to `send.ts`. The sample goes in on stdin, so no extra escaping is needed.
+   Windows PowerShell (the sample goes in on stdin, so no extra escaping is needed):
+
+   ```powershell
+   '{"hook_event_name":"Stop","cwd":"C:\\test","last_assistant_message":"Test reply."}' | & "C:\Users\you\.bun\bin\bun.exe" "C:\Users\you\duet-send\send.ts" --hook --dry-run
+   ```
+
+   In `--hook` mode the exit code is always 0, so read the output. A `message:` block starting with `[Claude Code: Stop]` means it works. A line starting with `duet:` says what is wrong.
 
 2. In Claude Code, type `/hooks` and check that the `Stop` entry is listed under your user settings. Claude Code normally picks up edits to `settings.json` by itself; if it isn't listed, start a new session.
 3. Ask Claude Code something short, then check Duet for the `[Claude Code: Stop]` message.

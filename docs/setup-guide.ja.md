@@ -247,7 +247,7 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 
 **定期実行（cron、launchd、タスクスケジューラ、ボットのサービスなど）。** これらは `~/.zshrc` やユーザーの PATH を読みません。すべてフルパスで書き、変数はジョブの中で設定してください。
 
-- `bun` のフルパス（macOS：`~/.bun/bin/bun`、Windows：`%USERPROFILE%\.bun\bin\bun.exe`）
+- `bun` のフルパス。`which bun`（macOS）か `(Get-Command bun).Source`（PowerShell）で確かめます。場所は Bun の入れ方で変わり、公式のインストーラーなら `~/.bun/bin/bun`、`%USERPROFILE%\.bun\bin\bun.exe` です
 - `DUET_CLAUDE_BIN` に `claude`（または `claude.exe`）のフルパス
 - 方法Bを使うなら、`DUET_GWS_BIN` に `gws` のフルパス
 - `DUET_DISCORD_WEBHOOK` など、使っているほかの変数
@@ -297,9 +297,31 @@ I've fixed the failing test and pushed the branch. ...
 
 `hooks/hooks.json` は、Claude Code の [プラグイン](https://code.claude.com/docs/ja/plugins/overview) に hook を入れるときの形式です。自分のパソコンで使うだけなら `settings.json` のほうが簡単です。プラグインの `hooks/hooks.json` でも、同じ `{"hooks": {...}}` の部分をそのまま使えます（横に任意の `"description"` を置けます）。
 
+### まず、2つのフルパスを確かめる
+
+hook には、`bun` のフルパスと `send.ts` のフルパスが必要です。下の例をそのまま写さず、自分のパソコンで確かめてください。`bun` の場所は入れ方で変わります。公式のインストーラーなら `~/.bun/bin/` ですが、Homebrew、npm、バージョン管理ツールなどで入れた場合は別の場所になります。
+
+macOS（2行目は duet-send のフォルダで実行します）：
+
+```sh
+which bun
+echo "$PWD/send.ts"
+```
+
+Windows の PowerShell（2行目は duet-send のフォルダで実行します）：
+
+```powershell
+(Get-Command bun).Source
+(Resolve-Path .\send.ts).Path
+```
+
+コマンドプロンプトなら、`where.exe bun` で `bun` のパスがわかります（`.exe` で終わる行を使います）。
+
+表示されたフルパスをそのまま書いてください。hook はシェルを通さずに `bun` を起動するので、`~`、`$HOME`、`%USERPROFILE%` は展開されません。あとで Claude Code が見つけた `bun` を起動できない場合（バージョン管理ツールの起動用ファイルだった場合など）は、`bun -e "console.log(process.execPath)"` で表示されるパスを使ってください。こちらは `bun` 本体です。
+
 ### 書く内容
 
-macOS（`you` やパスは自分のものに置き換えてください。`bun` のパスは `which bun` でわかります）：
+macOS（例のパスを、確かめた2つのパスに置き換えます）：
 
 ```json
 {
@@ -320,7 +342,7 @@ macOS（`you` やパスは自分のものに置き換えてください。`bun` 
 }
 ```
 
-Windows（JSON の中では、パスの `\` を `\\` と書きます。`bun.exe` のパスは `where.exe bun` でわかります）：
+Windows（JSON の中では、パスの `\` を `\\` と書きます）：
 
 ```json
 {
@@ -366,13 +388,21 @@ hook は Claude Code の環境変数を引き継ぐので、手順6の変数は�
 
 ### 確認する
 
-1. Claude Code が渡す内容のサンプルで、hook を手で動かします。これは何も送りません。
+1. `"command"` と `"args"` に書いた2つのパスをそのまま使い、Claude Code が渡す内容のサンプルで hook を手で動かします。書いたパスが正しいかを確かめるもので、何も送りません。
+
+   macOS：
 
    ```sh
-   echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | bun /path/to/duet-send/send.ts --hook --dry-run
+   echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --hook --dry-run
    ```
 
-   PowerShell でも、`send.ts` をフルパスにすれば同じ1行で動きます。サンプルは標準入力で渡すので、引用符を足す必要はありません。
+   Windows の PowerShell（サンプルは標準入力で渡すので、引用符を足す必要はありません）：
+
+   ```powershell
+   '{"hook_event_name":"Stop","cwd":"C:\\test","last_assistant_message":"Test reply."}' | & "C:\Users\you\.bun\bin\bun.exe" "C:\Users\you\duet-send\send.ts" --hook --dry-run
+   ```
+
+   `--hook` のときは終了コードが必ず0になるので、出力を見てください。`[Claude Code: Stop]` で始まる `message:` が出れば成功です。`duet:` で始まる行が出たら、そこに原因が書いてあります。
 
 2. Claude Code で `/hooks` と入力し、ユーザー設定に `Stop` が出ているか確かめます。`settings.json` の変更はふつう自動で読み込まれます。出ていなければ、新しいセッションを始めてください。
 3. Claude Code に短いことを頼み、Duet に `[Claude Code: Stop]` のメッセージが届くか確かめます。
