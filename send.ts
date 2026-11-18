@@ -8,25 +8,21 @@
  *   bun run duet --dry-run "message"   # print the target and body, send nothing
  *   bun /path/to/send.ts --hook         # Claude Code Stop hook: reads the hook JSON on stdin
  *
- * The coordinator's session id is read from duet-coordinator-session-id.txt
- * in your Google Drive. Lookup order:
- *   1. DUET_ID_FILE (full path to the file)
- *   2. The Google Drive for desktop sync folder
- *      mac: ~/Library/CloudStorage/GoogleDrive-*\/{My Drive,マイドライブ}/
- *      win: <drive letter>:\{My Drive,マイドライブ}\  and  %USERPROFILE%\Google Drive\
- *   3. Google Workspace CLI (gws), downloading the file straight from Drive
- *      (for machines without Drive for desktop; finds the file in your My Drive root,
- *      or uses DUET_DRIVE_FILE_ID if set)
- *   4. DUET_SESSION_ID (the id itself)
+ * The coordinator keeps its session id in the Drive *description* of
+ * duet-coordinator-session-id.txt in the root of your My Drive (its Drive connector
+ * can change a file's description but not its content). Lookup order:
+ *   1. Google Workspace CLI (gws): reads the file's description straight from Drive,
+ *      or its content when the description is empty (finds the file in your My Drive
+ *      root, or uses DUET_DRIVE_FILE_ID if set)
+ *   2. DUET_SESSION_ID (the id itself)
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const FILE_NAME = "duet-coordinator-session-id.txt";
-const DRIVE_ROOTS = ["My Drive", "マイドライブ"];
 // Claude Code accepts both session_... and cse_... ids for `--cloud`.
 const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 const MAX_LEN = 8000;
@@ -91,37 +87,6 @@ async function readStdin(): Promise<string> {
 }
 
 // ---------- where the session id lives ----------
-// A generator, so the search stops at the first file found.
-function* candidatePaths(): Generator<string> {
-  const home = homedir();
-
-  if (process.platform === "darwin") {
-    const cloud = join(home, "Library", "CloudStorage");
-    if (existsSync(cloud)) {
-      for (const d of readdirSync(cloud)) {
-        if (!d.startsWith("GoogleDrive-")) continue;
-        for (const root of DRIVE_ROOTS) yield join(cloud, d, root, FILE_NAME);
-      }
-    }
-    // legacy Backup and Sync location
-    yield join(home, "Google Drive", FILE_NAME);
-  } else if (process.platform === "win32") {
-    // Drive for desktop uses G: by default. Then the folders in the user profile,
-    // then the other drive letters in case G: was changed. Letters that don't exist
-    // are skipped with one quick check each.
-    const tryLetter = function* (letter: string) {
-      if (!existsSync(`${letter}:\\`)) return;
-      for (const root of DRIVE_ROOTS) yield `${letter}:\\${root}\\${FILE_NAME}`;
-    };
-    yield* tryLetter("G");
-    yield join(home, "Google Drive", FILE_NAME);
-    yield join(home, "My Drive", FILE_NAME);
-    for (const letter of "DEFHIJKLMNOPQRSTUVWXYZ") yield* tryLetter(letter);
-  } else {
-    yield join(home, "Google Drive", FILE_NAME);
-  }
-}
-
 function parseId(raw: string, where: string): string {
   const id = raw.replace(/^\uFEFF/, "").trim();
   if (!ID_PATTERN.test(id)) fail(`${where} does not contain a session id (expected session_... or cse_...): "${id.slice(0, 60)}"`);
@@ -183,14 +148,32 @@ function gwsReason(r: GwsResult): string {
   return r.stdout.trim().slice(0, 400) || "(no output)";
 }
 
-async function findDriveFileId(gws: string, cwd: string): Promise<string | null> {
-  const params = JSON.stringify({ q: GWS_QUERY, orderBy: "modifiedTime desc", pageSize: 10 });
+type DriveFile = { id: string; description: string };
+
+function driveFileFrom(json: { id?: unknown; description?: unknown } | undefined): DriveFile | null {
+  const id = String(json?.id ?? "");
+  if (!DRIVE_ID_PATTERN.test(id)) {
+    console.error("duet: gws returned an unexpected file id");
+    return null;
+  }
+  const description = typeof json?.description === "string" ? json.description : "";
+  return { id, description };
+}
+
+// Finds the id file by name and returns its Drive file id and description in one call.
+async function findDriveFile(gws: string, cwd: string): Promise<DriveFile | null> {
+  const params = JSON.stringify({
+    q: GWS_QUERY,
+    orderBy: "modifiedTime desc",
+    pageSize: 10,
+    fields: "files(id,description)",
+  });
   const r = await runGws(gws, ["drive", "files", "list", "--params", params], cwd);
   if (r.code !== 0) {
     console.error(`duet: gws could not search Drive for ${FILE_NAME} (exit ${r.code}): ${gwsReason(r)}`);
     return null;
   }
-  let files: { id?: unknown }[];
+  let files: { id?: unknown; description?: unknown }[];
   try {
     files = JSON.parse(r.stdout)?.files ?? [];
   } catch {
@@ -210,16 +193,29 @@ async function findDriveFileId(gws: string, cwd: string): Promise<string | null>
         "Delete the old ones, or set DUET_DRIVE_FILE_ID.",
     );
   }
-  const id = String(files[0]?.id ?? "");
-  if (!DRIVE_ID_PATTERN.test(id)) {
-    console.error("duet: gws returned an unexpected file id");
-    return null;
-  }
-  return id;
+  return driveFileFrom(files[0]);
 }
 
-// Returns the session id, or null after printing why it failed.
-async function readViaGws(gws: string): Promise<string | null> {
+// Reads the description of the file named by DUET_DRIVE_FILE_ID.
+async function getDriveFile(gws: string, fileId: string, cwd: string): Promise<DriveFile | null> {
+  const params = JSON.stringify({ fileId, fields: "id,description" });
+  const r = await runGws(gws, ["drive", "files", "get", "--params", params], cwd);
+  if (r.code !== 0) {
+    console.error(`duet: gws could not read Drive file ${fileId} (exit ${r.code}): ${gwsReason(r)}`);
+    return null;
+  }
+  try {
+    return driveFileFrom(JSON.parse(r.stdout));
+  } catch {
+    console.error(`duet: could not read the output of gws drive files get: ${r.stdout.trim().slice(0, 200)}`);
+    return null;
+  }
+}
+
+// Returns the session id and where it came from, or null after printing why it failed.
+// The description is used first; the file content only when the description is empty,
+// so setups made before the description was used keep working.
+async function readViaGws(gws: string): Promise<{ id: string; source: string } | null> {
   const envId = process.env.DUET_DRIVE_FILE_ID?.trim();
   if (envId && !DRIVE_ID_PATTERN.test(envId)) fail("DUET_DRIVE_FILE_ID does not look like a Drive file id");
 
@@ -227,11 +223,17 @@ async function readViaGws(gws: string): Promise<string | null> {
   // and pass a bare file name. realpath: on macOS the temp dir is behind a symlink.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "duet-")));
   try {
-    const fileId = envId || (await findDriveFileId(gws, dir));
-    if (!fileId) return null;
+    const file = envId ? await getDriveFile(gws, envId, dir) : await findDriveFile(gws, dir);
+    if (!file) return null;
+
+    if (file.description.trim()) {
+      const where = `the description of Drive file ${file.id}`;
+      return { id: parseId(file.description, where), source: "gws (Google Drive, file description)" };
+    }
+
     const r = await runGws(
       gws,
-      ["drive", "files", "get", "--params", JSON.stringify({ fileId, alt: "media" }), "-o", FILE_NAME],
+      ["drive", "files", "get", "--params", JSON.stringify({ fileId: file.id, alt: "media" }), "-o", FILE_NAME],
       dir,
     );
     const out = join(dir, FILE_NAME);
@@ -239,42 +241,32 @@ async function readViaGws(gws: string): Promise<string | null> {
       console.error(`duet: gws could not download the file (exit ${r.code}): ${gwsReason(r)}`);
       return null;
     }
-    return parseId(readFileSync(out, "utf8"), `Drive file ${fileId}`);
+    const content = readFileSync(out, "utf8");
+    if (!content.replace(/^\uFEFF/, "").trim()) {
+      console.error(
+        `duet: both the description and the content of Drive file ${file.id} are empty. ` +
+          "Ask your Duet coordinator to write its session id into the file's description.",
+      );
+      return null;
+    }
+    return { id: parseId(content, `Drive file ${file.id}`), source: "gws (Google Drive, file content)" };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 async function resolveSessionId(): Promise<{ id: string; source: string }> {
-  const fromEnvFile = process.env.DUET_ID_FILE;
-  const paths = fromEnvFile ? [fromEnvFile] : candidatePaths();
-
-  for (const p of paths) {
-    let raw: string;
-    try {
-      if (!existsSync(p)) continue;
-      raw = readFileSync(p, "utf8");
-    } catch {
-      continue;
-    }
-    return { id: parseId(raw, p), source: p };
-  }
-
-  const gws = fromEnvFile ? null : (process.env.DUET_GWS_BIN ?? Bun.which("gws"));
+  const gws = process.env.DUET_GWS_BIN ?? Bun.which("gws");
   if (gws) {
     const viaGws = await readViaGws(gws);
-    if (viaGws) return { id: viaGws, source: "gws (Google Drive)" };
+    if (viaGws) return viaGws;
   }
 
   const direct = process.env.DUET_SESSION_ID?.trim();
   if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
 
-  if (fromEnvFile) fail(`DUET_ID_FILE points to a file that does not exist: ${fromEnvFile}`);
-  if (gws) fail(`could not get the session id: no Drive for desktop folder has ${FILE_NAME}, and gws failed (see above).`);
-  fail(
-    `${FILE_NAME} was not found. Install Google Drive for desktop or gws (Google Workspace CLI), ` +
-      "or set DUET_ID_FILE / DUET_SESSION_ID.",
-  );
+  if (gws) fail("could not get the session id: gws failed (see above).");
+  fail("gws (Google Workspace CLI) was not found. Install it (see the setup guide), set DUET_GWS_BIN, or set DUET_SESSION_ID.");
 }
 
 // ---------- claude CLI ----------
