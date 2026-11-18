@@ -1,6 +1,5 @@
 node_modules/
 dist/
-bun.lockb
 *.log
 .DS_Store
 # never commit your own id file

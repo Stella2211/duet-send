@@ -6,6 +6,7 @@
  *   echo "message" | bun run duet
  *   bun run duet --tag "[Discord bot]" "message"
  *   bun run duet --dry-run "message"   # print the target and body, send nothing
+ *   bun /path/to/send.ts --hook         # Claude Code Stop hook: reads the hook JSON on stdin
  *
  * The coordinator's session id is read from duet-coordinator-session-id.txt
  * in your Google Drive. Lookup order:
@@ -30,16 +31,33 @@ const DRIVE_ROOTS = ["My Drive", "マイドライブ"];
 const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
+const HOOK_TAG = "[Claude Code: Stop]";
+// Longest part of the last assistant message that goes into a hook notification.
+const HOOK_SUMMARY_LEN = 500;
+// A hook run gives up after this long, so it never hangs around.
+const HOOK_TIMEOUT_MS = 60_000;
+
+// In --hook mode every exit is 0, so a problem here never interrupts Claude Code.
+// Errors still go to stderr (and to Discord when sending fails).
+let hookMode = false;
+function exit(code: number): never {
+  process.exit(hookMode ? 0 : code);
+}
 
 function fail(msg: string, code = 1): never {
   console.error(`duet: ${msg}`);
-  process.exit(code);
+  exit(code);
 }
+
+// Child processes, so the hook watchdog can stop them.
+const children = new Set<{ kill(): void }>();
 
 // ---------- arguments ----------
 function parseArgs(argv: string[]) {
-  let tag = process.env.DUET_TAG ?? DEFAULT_TAG;
+  let tag: string | null = null;
   let dryRun = false;
+  let verbose = false;
+  let hook = false;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -47,8 +65,15 @@ function parseArgs(argv: string[]) {
       tag = argv[++i] ?? fail("--tag needs a value");
     } else if (a === "--dry-run") {
       dryRun = true;
+    } else if (a === "--verbose") {
+      verbose = true;
+    } else if (a === "--hook") {
+      hook = true;
     } else if (a === "--help" || a === "-h") {
-      console.log('usage: bun run duet [--tag "[name]"] [--dry-run] "message"   (or pipe the message on stdin)');
+      console.log(
+        'usage: bun run duet [--tag "[name]"] [--dry-run] [--verbose] "message"   (or pipe the message on stdin)\n' +
+          "       bun /path/to/send.ts --hook [--tag \"[name]\"]   (Claude Code Stop hook; reads the hook JSON on stdin)",
+      );
       process.exit(0);
     } else if (a === "--") {
       rest.push(...argv.slice(i + 1));
@@ -57,7 +82,7 @@ function parseArgs(argv: string[]) {
       rest.push(a);
     }
   }
-  return { tag, dryRun, text: rest.join(" ") };
+  return { tag, dryRun, verbose, hook, text: rest.join(" ") };
 }
 
 async function readStdin(): Promise<string> {
@@ -66,8 +91,8 @@ async function readStdin(): Promise<string> {
 }
 
 // ---------- where the session id lives ----------
-function candidatePaths(): string[] {
-  const out: string[] = [];
+// A generator, so the search stops at the first file found.
+function* candidatePaths(): Generator<string> {
   const home = homedir();
 
   if (process.platform === "darwin") {
@@ -75,28 +100,43 @@ function candidatePaths(): string[] {
     if (existsSync(cloud)) {
       for (const d of readdirSync(cloud)) {
         if (!d.startsWith("GoogleDrive-")) continue;
-        for (const root of DRIVE_ROOTS) out.push(join(cloud, d, root, FILE_NAME));
+        for (const root of DRIVE_ROOTS) yield join(cloud, d, root, FILE_NAME);
       }
     }
     // legacy Backup and Sync location
-    out.push(join(home, "Google Drive", FILE_NAME));
+    yield join(home, "Google Drive", FILE_NAME);
   } else if (process.platform === "win32") {
-    // Drive for desktop uses G: by default; also try D-Z in case it was changed
-    for (const letter of "GDEFHIJKLMNOPQRSTUVWXYZ") {
-      for (const root of DRIVE_ROOTS) out.push(`${letter}:\\${root}\\${FILE_NAME}`);
-    }
-    out.push(join(home, "Google Drive", FILE_NAME));
-    out.push(join(home, "My Drive", FILE_NAME));
+    // Drive for desktop uses G: by default. Then the folders in the user profile,
+    // then the other drive letters in case G: was changed. Letters that don't exist
+    // are skipped with one quick check each.
+    const tryLetter = function* (letter: string) {
+      if (!existsSync(`${letter}:\\`)) return;
+      for (const root of DRIVE_ROOTS) yield `${letter}:\\${root}\\${FILE_NAME}`;
+    };
+    yield* tryLetter("G");
+    yield join(home, "Google Drive", FILE_NAME);
+    yield join(home, "My Drive", FILE_NAME);
+    for (const letter of "DEFHIJKLMNOPQRSTUVWXYZ") yield* tryLetter(letter);
   } else {
-    out.push(join(home, "Google Drive", FILE_NAME));
+    yield join(home, "Google Drive", FILE_NAME);
   }
-  return out;
 }
 
 function parseId(raw: string, where: string): string {
   const id = raw.replace(/^\uFEFF/, "").trim();
   if (!ID_PATTERN.test(id)) fail(`${where} does not contain a session id (expected session_... or cse_...): "${id.slice(0, 60)}"`);
   return id;
+}
+
+// Shows only the start and end of a session id, so ids don't end up in logs or screenshots.
+function maskId(id: string): string {
+  const m = /^(session|cse)_(.+)$/.exec(id);
+  if (!m || m[2].length < 10) return id.replace(/_.+$/, "_…");
+  return `${m[1]}_${m[2].slice(0, 4)}…${m[2].slice(-3)}`;
+}
+
+function maskIdsIn(text: string): string {
+  return text.replace(/\b(?:session|cse)_[A-Za-z0-9]+/g, (m) => maskId(m));
 }
 
 // Wrapper for launching npm's gws.cmd on Windows.
@@ -109,6 +149,7 @@ function cmdWrap(bin: string, args: string[]): string[] {
 // Read the file straight from Drive with the Google Workspace CLI (https://github.com/googleworkspace/cli).
 // Only the file in the root of your own My Drive is accepted, so a file with the same
 // name that someone else shared with you is never used.
+// docs/setup-guide*.md show the same query for a manual check; keep them in sync.
 const GWS_QUERY = `name = '${FILE_NAME}' and 'root' in parents and 'me' in owners and trashed = false`;
 const DRIVE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -116,6 +157,7 @@ type GwsResult = { code: number; stdout: string; stderr: string };
 
 async function runGws(gws: string, args: string[], cwd: string): Promise<GwsResult> {
   const proc = Bun.spawn(cmdWrap(gws, args), { cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  children.add(proc);
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -125,8 +167,14 @@ async function runGws(gws: string, args: string[], cwd: string): Promise<GwsResu
 }
 
 // gws prints a one-line error to stderr and a JSON error body to stdout.
+// Its log lines (such as "Using keyring backend: keyring") are left out.
 function gwsReason(r: GwsResult): string {
-  const err = r.stderr.trim();
+  const lines = r.stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^using keyring backend/i.test(l));
+  const errors = lines.filter((l) => /^error/i.test(l));
+  const err = (errors.length ? errors : lines).join(" ");
   if (err) return err.slice(0, 400);
   try {
     const msg = JSON.parse(r.stdout)?.error?.message;
@@ -245,9 +293,13 @@ function resolveClaude(): string {
 }
 
 function sanitize(text: string): string {
-  // strip control characters except newline and tab
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  // CRLF and lone CR become LF; then strip control characters except newline and tab
+  return (
+    text
+      .replace(/\r\n?/g, "\n")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
+  );
 }
 
 async function notifyDiscord(content: string) {
@@ -264,31 +316,109 @@ async function notifyDiscord(content: string) {
   }
 }
 
+// ---------- Claude Code Stop hook ----------
+// Docs: https://code.claude.com/docs/en/hooks (Stop, StopFailure)
+type HookInput = {
+  hook_event_name?: unknown;
+  cwd?: unknown;
+  stop_hook_active?: unknown;
+  last_assistant_message?: unknown;
+  background_tasks?: unknown;
+  error?: unknown;
+};
+
+function clip(text: string, max: number): string {
+  const chars = Array.from(sanitize(text).trim());
+  return chars.length > max ? `${chars.slice(0, max).join("").trimEnd()}…` : chars.join("");
+}
+
+// Builds the notification from the hook's JSON, or returns null when nothing should be sent.
+async function hookMessage(): Promise<string | null> {
+  // Set on the claude process this script starts, so a hook can never trigger itself.
+  if (process.env.DUET_HOOK === "1") return null;
+  if (process.stdin.isTTY) fail("--hook reads the hook's JSON on stdin. Claude Code provides it; to test, pipe a sample in.");
+
+  let input: HookInput;
+  try {
+    input = JSON.parse(await new Response(Bun.stdin.stream()).text());
+  } catch {
+    fail("--hook expects the hook's JSON on stdin, but it could not be parsed.");
+  }
+  if (!input || typeof input !== "object") fail("--hook expects a JSON object on stdin.");
+  // true when Claude is already continuing because of a Stop hook: that turn was notified already.
+  if (input.stop_hook_active === true) return null;
+
+  const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "Stop";
+  // Only the folder name, not the full path (which would include your user name).
+  const folder = typeof input.cwd === "string" ? (input.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "") : "";
+  const where = folder ? ` in ${folder}` : "";
+
+  if (event === "StopFailure") {
+    const err = typeof input.error === "string" ? ` (${clip(input.error, 60)})` : "";
+    return `Claude Code stopped because of an API error${err}${where}.`;
+  }
+
+  let msg = event === "Stop" ? `Claude Code finished responding${where}.` : `Claude Code hook ${clip(event, 40)}${where}.`;
+  if (Array.isArray(input.background_tasks) && input.background_tasks.length > 0) {
+    const n = input.background_tasks.length;
+    msg += ` ${n} background task${n === 1 ? " is" : "s are"} still running.`;
+  }
+  const last = typeof input.last_assistant_message === "string" ? clip(input.last_assistant_message, HOOK_SUMMARY_LEN) : "";
+  if (last) msg += `\n\nLast message:\n${last}`;
+  return msg;
+}
+
 // ---------- main ----------
+// Set before parsing, so even an argument error exits 0 in hook mode.
+hookMode = Bun.argv.slice(2).includes("--hook");
 const args = parseArgs(Bun.argv.slice(2));
-let text = args.text || (await readStdin());
+// In hook mode, status lines go to stderr so stdout stays free for Claude Code.
+const log = hookMode ? console.error : console.log;
+
+if (hookMode) {
+  setTimeout(() => {
+    console.error(`duet: the hook gave up after ${HOOK_TIMEOUT_MS / 1000} seconds`);
+    for (const c of children) c.kill();
+    exit(1);
+  }, HOOK_TIMEOUT_MS).unref();
+}
+
+let text: string;
+if (hookMode) {
+  const built = await hookMessage();
+  if (built === null) exit(0);
+  text = built;
+} else {
+  text = args.text || (await readStdin());
+}
 if (!text) fail('the message is empty. Usage: bun run duet "message"', 2);
 
 text = sanitize(text);
 if (text.length > MAX_LEN) fail(`the message is too long (${text.length} characters, limit ${MAX_LEN})`);
 
 // Prefix the tag. This also keeps a body starting with "-" from being read as a flag.
-const tag = sanitize(args.tag).trim() || DEFAULT_TAG;
+const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
+const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
 const message = `${tag} ${text}`;
 
 const { id, source } = await resolveSessionId();
+// Checked before the dry run too, so a dry run fails the same way a real send would.
+const claude = resolveClaude();
+const shownId = args.verbose ? id : maskId(id);
 
 if (args.dryRun) {
-  console.log(`to: ${id}\n(read from: ${source})\nmessage:\n${message}`);
-  process.exit(0);
+  console.log(`to: ${shownId}\n(read from: ${source})\nclaude: ${claude}\nmessage:\n${message}`);
+  exit(0);
 }
 
-const claude = resolveClaude();
 const proc = Bun.spawn([claude, "-p", message, "--cloud", id], {
   stdout: "pipe",
   stderr: "pipe",
   stdin: "ignore",
+  // Marks this claude process, so a Stop hook running duet-send --hook skips it.
+  env: { ...process.env, DUET_HOOK: "1" },
 });
+children.add(proc);
 const [stdout, stderr, code] = await Promise.all([
   new Response(proc.stdout).text(),
   new Response(proc.stderr).text(),
@@ -296,15 +426,17 @@ const [stdout, stderr, code] = await Promise.all([
 ]);
 
 if (code === 0) {
-  if (stdout.trim()) console.log(stdout.trim());
-  console.log("duet: sent");
-  process.exit(0);
+  // claude prints the session id and its URL; show them only with --verbose.
+  if (args.verbose && stdout.trim()) log(stdout.trim());
+  log(`duet: sent to ${shownId}`);
+  exit(0);
 }
 
-const detail = (stderr || stdout).trim().slice(0, 800);
+const raw = (stderr || stdout).trim().slice(0, 800);
+const detail = args.verbose ? raw : maskIdsIn(raw);
 console.error(`duet: sending failed (exit ${code})\n${detail}`);
 await notifyDiscord(
   `duet-send: sending to Claude Duet failed (exit ${code}). The coordinator's session id may have changed.\n` +
-    `to: ${id}\n\`\`\`\n${detail}\n\`\`\``,
+    `to: ${maskId(id)}\n\`\`\`\n${maskIdsIn(raw)}\n\`\`\``,
 );
-process.exit(1);
+exit(1);

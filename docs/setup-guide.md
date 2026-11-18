@@ -4,7 +4,7 @@ English | [日本語](setup-guide.ja.md)
 
 This guide installs duet-send on macOS or Windows. It is written so that a person can follow it, and so that Claude Code can follow it on the user's behalf.
 
-> **For Claude Code:** work through the steps in order and run the checks at the end of each step. Install software only with the official commands shown here. Don't write to the user's shell profile or environment variables, and don't send a real message (step 6), until the user says yes. Never print or store a session id anywhere except where this guide says.
+> **For Claude Code:** work through the steps in order and run the check at the end of each step. Install software only with the official commands shown here. Don't write to the user's shell profile or environment variables, don't send a real message (step 7), and don't edit Claude Code's settings files (optional step 9), until the user says yes. duet-send shortens session ids in its output; don't run it with `--verbose`, and don't print, copy or store a full session id anywhere.
 
 ## How it fits together
 
@@ -23,10 +23,26 @@ The coordinator writes its own session id into the Drive file (see [DUET_INSTRUC
 
 ## 0. Before you start
 
-- Ask your Duet coordinator to set itself up first: give it the link to this repository. When it's done, the file `duet-coordinator-session-id.txt` is in the root of your My Drive, and the coordinator tells you its Drive file id (optional; only the `gws` route can use it).
+- **The id file must exist first.** Give the link to this repository to your Duet coordinator and ask it to set up duet-send. When it's done, `duet-coordinator-session-id.txt` is in the root of your My Drive. The coordinator also tells you the file's Drive file id; you don't need it, but it can speed up the `gws` route.
 - You need a Claude plan with Claude Code and cloud sessions (Pro, Max, Team, or Enterprise with the right seat). Sending with `--cloud` requires signing in with your Claude account; it doesn't work with an API key alone or with Amazon Bedrock, Google Vertex AI or other third-party providers.
+- After installing anything in the steps below, **open a new terminal** before running the next command, so the new program is found.
 
-## 1. Install Bun
+## 1. Install git (or download a ZIP)
+
+Check whether git is there:
+
+```sh
+git --version
+```
+
+If it isn't:
+
+- macOS: run `xcode-select --install` and follow the dialog.
+- Windows (PowerShell): `winget install --id Git.Git -e`, or download it from [git-scm.com](https://git-scm.com/downloads/win).
+
+If you'd rather not install git, skip it: in step 5 you can download a ZIP instead.
+
+## 2. Install Bun
 
 macOS:
 
@@ -46,7 +62,7 @@ Open a new terminal, then check:
 bun --version
 ```
 
-## 2. Install Claude Code (native) and sign in
+## 3. Install Claude Code (native) and sign in
 
 Skip the install if `claude --version` already works, but on Windows read the note below.
 
@@ -62,7 +78,7 @@ Windows (PowerShell):
 irm https://claude.ai/install.ps1 | iex
 ```
 
-Then sign in with your Claude account (the same account you use for Claude Duet):
+**Open a new terminal**, then sign in with your Claude account (the same account you use for Claude Duet):
 
 ```sh
 claude auth login
@@ -75,9 +91,12 @@ claude --version
 where.exe claude
 ```
 
-If the first line ends in `.cmd`, either install the native version as shown above, or set `DUET_CLAUDE_BIN` to the full path of `claude.exe` (the native installer puts it in `%USERPROFILE%\.local\bin\claude.exe`).
+If the first line ends in `.cmd`, either install the native version as shown above, or set `DUET_CLAUDE_BIN` to the full path of `claude.exe`. The native installer puts it here:
 
-## 3. Give duet-send a way to read the id file
+- PowerShell: `"$env:USERPROFILE\.local\bin\claude.exe"`
+- Command Prompt: `%USERPROFILE%\.local\bin\claude.exe`
+
+## 4. Give duet-send a way to read the id file
 
 Pick **one**.
 
@@ -85,51 +104,70 @@ Pick **one**.
 
 Install [Google Drive for desktop](https://www.google.com/drive/download/) and sign in with the Google account that holds the id file. Both "stream" and "mirror" modes work.
 
-duet-send looks in these places automatically:
+duet-send looks in these places, in this order:
 
-- macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`)
-- Windows: `G:\My Drive\` (or `マイドライブ\`). If you changed the drive letter, it tries D through Z.
+- macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`), then `~/Google Drive/`
+- Windows: `G:\My Drive\` (or `マイドライブ\`), then `%USERPROFILE%\Google Drive\` and `%USERPROFILE%\My Drive\`, then the same folders on the other drive letters that exist (D to Z)
 
-If your Drive folder is somewhere else, set `DUET_ID_FILE` to the full path of the file (step 5).
+If your Drive folder is somewhere else, set `DUET_ID_FILE` to the full path of the file (step 6). With `DUET_ID_FILE` set, duet-send reads only that file and doesn't try the folders above or `gws`. On Windows this also avoids waiting on a disconnected network drive during the search.
 
 On macOS, the first time a terminal reads the Drive folder, macOS may ask whether the terminal may access Google Drive files. Allow it.
 
 ### Option B: Google Workspace CLI (`gws`)
 
-Use this on machines without Drive for desktop. `gws` is an open-source tool from the googleworkspace GitHub organization; its README says it is not an officially supported Google product, and it is still before v1.0.
+Use this on machines without Drive for desktop. `gws` is an open-source tool from the googleworkspace GitHub organization; it says it is not an officially supported Google product, and it is still before v1.0.
+
+Install it one of these ways:
 
 ```sh
-npm install -g @googleworkspace/cli    # on macOS, brew install googleworkspace-cli also works
-gws auth setup                         # first time only; uses the gcloud CLI, or set up OAuth in the Cloud Console by hand
+brew install googleworkspace-cli                # macOS with Homebrew
+winget install --id Google.WorkspaceCLI -e      # Windows
+npm install -g @googleworkspace/cli             # either; needs Node.js 18 or later
+```
+
+Then sign in:
+
+```sh
+gws auth setup          # first time only; uses the gcloud CLI, or set up OAuth in the Cloud Console by hand
 gws auth login -s drive
 ```
 
 Note that the `drive` scope can read and write all of your Drive.
 
-That's all duet-send needs: it searches the root of your own My Drive for `duet-coordinator-session-id.txt` (files other people shared with you are ignored) and downloads it. If you set `DUET_DRIVE_FILE_ID` (step 5), it skips the search and downloads that file directly.
+That's all duet-send needs. It searches the root of **your own** My Drive for `duet-coordinator-session-id.txt` and downloads it. Files in subfolders, and files other people shared with you, are ignored. If you set `DUET_DRIVE_FILE_ID` (step 6), it skips the search and downloads that file directly.
 
-To check that `gws` can see the file, run:
+The easiest check is the dry run in step 7, which runs exactly the same search. To run the search by hand, use the command for your shell (all three send the same query as duet-send):
+
+macOS (zsh or bash):
 
 ```sh
-gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and trashed = false\"}"
+gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and 'root' in parents and 'me' in owners and trashed = false\"}"
 ```
 
-In PowerShell 7.3 or later:
+PowerShell 7.3 or later:
 
 ```powershell
-gws drive files list --params '{"q":"name = ''duet-coordinator-session-id.txt'' and trashed = false"}'
+gws drive files list --params '{"q":"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false"}'
 ```
 
-In the older Windows PowerShell 5.1, the inner double quotes get lost; escape each `"` as `\"`.
+Windows PowerShell 5.1 (the default `powershell.exe`):
 
-You should see one file with its `id`. If `gws` prints an error, duet-send prints the same error, so fix that first (usually by running `gws auth login -s drive` again).
+```powershell
+gws drive files list --params '{\"q\":\"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false\"}'
+```
 
-## 4. Get duet-send
+You should see one file with its `id`. If your shell still mangles the quotes, use the dry run instead.
+
+## 5. Get duet-send
+
+With git:
 
 ```sh
 git clone https://github.com/Stella2211/duet-send.git
 cd duet-send
 ```
+
+Without git: open https://github.com/Stella2211/duet-send, choose **Code → Download ZIP**, extract it, and open a terminal in the extracted folder.
 
 duet-send has no runtime dependencies. `bun install` is optional; it only adds type definitions for editors.
 
@@ -139,15 +177,15 @@ Check that the script builds:
 bun run check
 ```
 
-## 5. Set environment variables (only the ones you need)
+## 6. Set environment variables (only the ones you need)
 
 | Variable | When you need it |
 | --- | --- |
-| `DUET_DRIVE_FILE_ID` | Option B (`gws`), only to skip the search by name |
-| `DUET_ID_FILE` | The id file isn't in the usual Drive folder |
+| `DUET_ID_FILE` | The id file isn't in one of the folders in step 4. Turns off the folder search and `gws`. |
+| `DUET_DRIVE_FILE_ID` | Option B, only to skip the search by name |
 | `DUET_DISCORD_WEBHOOK` | You want a Discord alert when sending fails |
 | `DUET_TAG` | You want a default tag other than `[Claude Code]` |
-| `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` isn't on PATH |
+| `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` isn't on PATH, or you run duet-send on a schedule (step 8) |
 | `DUET_SESSION_ID` | Last resort: the id itself (it goes stale when the coordinator changes) |
 
 macOS (zsh): add lines like this to `~/.zshrc`, then open a new terminal.
@@ -162,15 +200,25 @@ Windows: run this in PowerShell, then open a new terminal.
 [Environment]::SetEnvironmentVariable("DUET_DISCORD_WEBHOOK", "https://discord.com/api/webhooks/...", "User")
 ```
 
-## 6. Check it works
+## 7. Check it works
 
-First a dry run. It finds the id and prints the target and the message, but sends nothing:
+First a dry run. It finds the session id and `claude`, and prints what it would send, but sends nothing:
 
 ```sh
 bun run duet --dry-run "duet-send test"
 ```
 
-You should see `to: session_...`, `read from: ...` and the message with its tag. If you see an error, go to Troubleshooting below.
+You should see something like this. The session id is shortened on purpose.
+
+```
+to: session_01Ab…xyz
+(read from: /Users/you/Library/CloudStorage/GoogleDrive-.../My Drive/duet-coordinator-session-id.txt)
+claude: /Users/you/.local/bin/claude
+message:
+[Claude Code] duet-send test
+```
+
+If you see an error, go to Troubleshooting below.
 
 Then send a real test message (Claude Code: ask the user first):
 
@@ -178,9 +226,9 @@ Then send a real test message (Claude Code: ask the user first):
 bun run duet "duet-send test. Please reply in the chat if this arrived."
 ```
 
-`duet: sent` means Claude Code queued the message. Check your Duet chat for the coordinator's reply.
+`duet: sent to session_…` means Claude Code queued the message. Check your Duet chat for the coordinator's reply. Add `--verbose` only if you need the full session id or Claude Code's own output.
 
-## 7. Use it from your scripts
+## 8. Use it from your scripts and scheduled jobs
 
 Call the script by its full path, with a tag that says who is sending:
 
@@ -197,15 +245,171 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 
 If the message may start with `-`, put `--` before it: `bun run duet -- "-5 tests failed"`. (The tag is always put in front, so the message can never be read as a flag by `claude`.)
 
+**Scheduled runs (cron, launchd, Task Scheduler, a bot service).** These don't read `~/.zshrc` or your user PATH. Use full paths everywhere, and set the variables in the job itself:
+
+- the full path to `bun` (macOS: `~/.bun/bin/bun`; Windows: `%USERPROFILE%\.bun\bin\bun.exe`)
+- `DUET_CLAUDE_BIN` set to the full path of `claude` (or `claude.exe`)
+- `DUET_GWS_BIN` set to the full path of `gws`, if you use Option B
+- any other variables you use, such as `DUET_DISCORD_WEBHOOK`
+
+Example crontab line on macOS (replace `you` and the paths with yours):
+
+```sh
+0 9 * * * DUET_CLAUDE_BIN=/Users/you/.local/bin/claude /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --tag "[cron]" "Good morning" >> /tmp/duet-send.log 2>&1
+```
+
+The job must run as the same user who ran `claude auth login`, and on macOS it may need permission to read the Google Drive folder.
+
+## 9. Optional: tell the coordinator when Claude Code finishes (Stop hook)
+
+Claude Code can run a command each time it finishes responding. This is called a [Stop hook](https://code.claude.com/docs/en/hooks#stop). With `--hook`, duet-send turns that into a short message to your coordinator, so Duet hears about it when Claude Code on your computer is done.
+
+What the coordinator receives looks like this:
+
+```
+[Claude Code: Stop] Claude Code finished responding in my-project.
+
+Last message:
+I've fixed the failing test and pushed the branch. ...
+```
+
+It holds the name of the folder Claude Code was working in (not the full path) and up to 500 characters of Claude's last reply.
+
+### When it fires, and when it doesn't
+
+- It fires **every time Claude finishes a response**, not only when a whole task is done. A quick answer, or Claude stopping to ask you something, also sends a message. Expect one message per turn.
+- It does **not** fire when you interrupt Claude (Esc). When a turn ends because of an API error (rate limit, sign-in problem, and so on), Claude Code runs `StopFailure` instead; see the optional second entry below.
+- Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When sending fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert.
+- Sending only queues the message. The coordinator reads it the next time it runs.
+
+So it is a reliable "a turn ended" signal while Claude Code is running normally, not a guarantee that every piece of work is reported.
+
+### Where to put it
+
+Use your **user settings**, so it works in every project on this computer:
+
+- macOS: `~/.claude/settings.json`
+- Windows: `%USERPROFILE%\.claude\settings.json`
+
+To use it in one project only, put the same block in that project's `.claude/settings.local.json` instead. Don't put it in a project's shared `.claude/settings.json`: the paths only exist on your computer, and that file is committed and read by everyone who opens the project.
+
+If the file already exists, add the `"hooks"` part to it instead of replacing the file. If it already has a `"hooks"` section, add the `"Stop"` entry inside it.
+
+`hooks/hooks.json` is the format for hooks bundled in a Claude Code [plugin](https://code.claude.com/docs/en/plugins/overview). For your own computer, `settings.json` is simpler; a plugin's `hooks/hooks.json` uses the same `{"hooks": {...}}` block, with an optional `"description"` beside it.
+
+### The entry
+
+macOS (replace `you` and the paths with yours; `which bun` shows the path to `bun`):
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/you/.bun/bin/bun",
+            "args": ["/Users/you/duet-send/send.ts", "--hook"],
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Windows (in JSON, each `\` in a path is written `\\`; `where.exe bun` shows the path to `bun.exe`):
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\you\\.bun\\bin\\bun.exe",
+            "args": ["C:\\Users\\you\\duet-send\\send.ts", "--hook"],
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+About these settings:
+
+- `"command"` with `"args"` makes Claude Code start `bun` directly, without a shell, so paths with spaces need no quoting. On Windows this needs a real `.exe`, which `bun.exe` is.
+- `"async": true` makes Claude Code carry on without waiting for the send. duet-send stops by itself after 60 seconds at most.
+- In `--hook` mode duet-send always exits with code 0 and writes problems only to stderr, so it never stops Claude Code or makes Claude keep working.
+- A Stop entry takes no `"matcher"`.
+
+**If you run `claude -p` (non-interactive) and want a message at the end of those runs too:** Claude Code cancels async hooks that are still running when `claude -p` exits, so the message may not go out. Remove `"async": true` and add `"timeout": 90` instead. Claude Code then waits for the send, usually a few seconds, before it exits.
+
+**Optional second entry for API errors.** To also hear when a turn ends because of an API error, add a `"StopFailure"` entry next to `"Stop"`, with the same `"hooks"` list. The message then says which error it was.
+
+### Environment variables for the hook
+
+The hook runs with Claude Code's environment, so the variables from step 6 apply when Claude Code was started after you set them. If you start Claude Code from the desktop app or an editor and the hook can't find `claude` or your other settings, add them to the `"env"` block of the same `settings.json`. Claude Code passes it to the programs it starts, hooks included:
+
+```json
+{
+  "env": {
+    "DUET_CLAUDE_BIN": "/Users/you/.local/bin/claude"
+  }
+}
+```
+
+### Check it
+
+1. Run the hook by hand with a sample of what Claude Code sends. This sends nothing:
+
+   ```sh
+   echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | bun /path/to/duet-send/send.ts --hook --dry-run
+   ```
+
+   In PowerShell, the same line works with the full path to `send.ts`. The sample goes in on stdin, so no extra escaping is needed.
+
+2. In Claude Code, type `/hooks` and check that the `Stop` entry is listed under your user settings. Claude Code normally picks up edits to `settings.json` by itself; if it isn't listed, start a new session.
+3. Ask Claude Code something short, then check Duet for the `[Claude Code: Stop]` message.
+
+### Fewer messages, and loop safety
+
+- To turn it off for one session, start Claude Code with `DUET_HOOK=1` set (for example `DUET_HOOK=1 claude`). duet-send then skips the hook.
+- To use it only in some projects, put the entry in those projects' `.claude/settings.local.json` instead of your user settings.
+- To tell computers apart, add a tag to `"args"`: `["/Users/you/duet-send/send.ts", "--hook", "--tag", "[Claude Code: Stop @MacBook]"]`.
+- To remove it, delete the entry. There is no switch for one hook; `"disableAllHooks": true` turns off all of your hooks.
+
+duet-send guards against loops by itself: it skips the hook when `stop_hook_active` is true (Claude is already continuing because of a Stop hook), and it marks the `claude` it starts with `DUET_HOOK=1`, so its own send can never trigger the hook again. Duet cloud sessions don't read your `~/.claude/settings.json`, so the coordinator's own turns don't trigger it either.
+
 ## Troubleshooting
 
 **`duet-coordinator-session-id.txt was not found`**
-Drive for desktop isn't running, isn't signed in, or the folder is somewhere else. Check that the file exists in My Drive in your browser, wait for Drive to sync, or set `DUET_ID_FILE` to the full path. For the `gws` route, read the `gws` error printed above this message.
+Neither Drive for desktop nor `gws` is available. Check that the file exists in My Drive in your browser, make sure Drive for desktop is running and signed in, or set up Option B. You can also set `DUET_ID_FILE` to the full path.
+
+**`could not get the session id: no Drive for desktop folder has duet-coordinator-session-id.txt, and gws failed (see above)`**
+`gws` is installed but couldn't get the file. The line above this one says why; see the next entries.
+
+**`gws could not search Drive ...` or `gws could not download the file ...` with `invalid_grant`, `error[auth]` or `401`**
+Your `gws` sign-in has expired or was revoked. Run `gws auth login -s drive` again, then retry.
+
+**`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
+The file is missing, in a subfolder, or owned by another account. Ask the coordinator to create it in the root of your My Drive, or set `DUET_DRIVE_FILE_ID`.
+
+**`warning: found 2 files named duet-coordinator-session-id.txt`**
+This is only a warning: duet-send goes on with the newest file. To get rid of it, delete the old copies in Drive, or set `DUET_DRIVE_FILE_ID`.
+
+**`DUET_ID_FILE points to a file that does not exist`**
+Fix the path, or unset `DUET_ID_FILE` to let duet-send search again.
 
 **`... does not contain a session id`**
 The file must hold exactly one line starting with `session_` (or `cse_`). Ask the coordinator to rewrite the file.
 
-**`cloud session <id> is archived and cannot accept new messages` or `Session not found`**
+**`cloud session session_… is archived and cannot accept new messages` or `Session not found`**
 The coordinator has changed and the file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and asks you before updating the file. If you set up the hourly check, this fixes itself within about an hour. If you use `DUET_SESSION_ID`, update it.
 
 **`Unable to get organization UUID` or "Cloud sessions need a claude.ai sign-in"**
@@ -214,20 +418,14 @@ Run `claude auth login` and sign in with your Claude account. An API key is not 
 **`Cloud sessions are disabled by your organization's policy`**
 On a Team or Enterprise plan, an organization owner has to allow cloud sessions in the Claude Code admin settings.
 
-**`claude.cmd is a .cmd file and cannot be called safely` (Windows)**
-See the Windows note in step 2.
+**`... is a .cmd file and cannot be called safely` (Windows)**
+See the Windows note in step 3. The dry run checks this too.
 
 **`claude was not found`**
-Open a new terminal after installing, or set `DUET_CLAUDE_BIN` to the full path.
+Open a new terminal after installing, or set `DUET_CLAUDE_BIN` to the full path. In scheduled runs, always set it.
 
-**`gws could not search Drive` or `gws could not download the file`**
-The rest of the line is the error from `gws` itself. An `error[auth]` or `401` means `gws auth login -s drive` needs to be run again.
-
-**`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
-The file is missing, in a subfolder, or owned by another account. Ask the coordinator to create it in the root of your My Drive, or set `DUET_DRIVE_FILE_ID`.
-
-**`found 2 files named duet-coordinator-session-id.txt`**
-duet-send uses the newest one. Delete the old copies in Drive, or set `DUET_DRIVE_FILE_ID`.
+**The search is slow on Windows**
+duet-send checks the drive letters that exist. A disconnected network drive can make that check wait. Set `DUET_ID_FILE` to skip the search.
 
 **Nothing arrives in Duet, but `duet: sent` was printed**
 Make sure `claude` is signed in to the same Claude account as Duet (`claude auth status`), and that the id in the file is the coordinator's current one (ask the coordinator).
