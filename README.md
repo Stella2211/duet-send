@@ -6,8 +6,8 @@ Send a message from your own computer to your **Claude Duet** coordinator.
 
 Claude Duet's coordinator runs as a cloud Claude Code session. Claude Code can already queue a message into a cloud session with `claude -p "message" --cloud <session id>`, but the coordinator's session id changes from time to time, and scripts don't know the new one. duet-send solves that small but annoying problem:
 
-- The coordinator keeps its current session id in a one-line file, `duet-coordinator-session-id.txt`, in your Google Drive.
-- duet-send reads that file and sends your message to the right session.
+- The coordinator keeps its current session id in the **description** of a file in your Google Drive, `duet-coordinator-session-id.txt`, and rewrites it whenever its id changes. (It uses the description because Claude's Google Drive connector can change a file's description but not its content.)
+- duet-send reads that description and sends your message to the right session.
 - If sending fails (for example because the id went stale), it can alert you on Discord.
 
 Use it to let a build script, a Discord bot, a scheduled job or a local Claude Code session hand work to your Duet coordinator. Works on **macOS and Windows**.
@@ -32,7 +32,7 @@ You need:
 - [git](https://git-scm.com/downloads), or download this repository as a ZIP instead (below)
 - [Bun](https://bun.com)
 - The native [Claude Code](https://code.claude.com/docs/en/setup), signed in with `claude auth login`
-- Google Drive for desktop, or the Google Workspace CLI (`gws`)
+- The Google Workspace CLI (`gws`), signed in to the Google account that holds the id file. Google Drive for desktop also works as a fallback, but it can only see the file's content, not its description, so it doesn't pick up a new id by itself.
 
 ```sh
 git clone https://github.com/Stella2211/duet-send.git
@@ -71,19 +71,19 @@ Optional: duet-send can also run as a Claude Code [Stop hook](https://code.claud
 
 duet-send uses the first one it finds:
 
-1. `DUET_ID_FILE`: the full path to the id file. When this is set, steps 2 and 3 are skipped.
-2. The Google Drive for desktop folder:
+1. `DUET_ID_FILE`: the full path to a file whose content is the id. When this is set, steps 2 and 3 are skipped.
+2. The Google Workspace CLI (`gws`): it looks for the file in the root of your own My Drive (or uses `DUET_DRIVE_FILE_ID` if that is set) and reads the file's **description**. If the description is empty, it downloads the file's content instead, so files set up before the description was used keep working. Files other people shared with you are ignored.
+3. The Google Drive for desktop folder, only if `gws` isn't installed or fails (with a warning). A synced folder only has the file's content, which may hold an older id than the description.
    - macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`), then `~/Google Drive/`
    - Windows: `G:\My Drive\` (or `マイドライブ\`), then `%USERPROFILE%\Google Drive\` and `%USERPROFILE%\My Drive\`, then the same folders on the other drive letters that exist (D to Z)
-3. The Google Workspace CLI (`gws`): it looks for the file in the root of your own My Drive and downloads it, or downloads `DUET_DRIVE_FILE_ID` directly if that is set. Files other people shared with you are ignored.
 4. `DUET_SESSION_ID`: the id itself.
 
 ## Environment variables (all optional)
 
 | Variable | What it does |
 | --- | --- |
-| `DUET_ID_FILE` | Full path to the id file. Turns off the Drive folder search and `gws`. |
-| `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`, so `gws` can skip the search by name. |
+| `DUET_ID_FILE` | Full path to a file whose content is the id. Turns off `gws` and the Drive folder search. |
+| `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`, so `gws` can skip the search by name and read that file's description directly. |
 | `DUET_SESSION_ID` | The session id itself, as a last resort. It goes stale when the coordinator changes. |
 | `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]` |
 | `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when sending fails. Session ids in the alert are shortened. |

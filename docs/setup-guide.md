@@ -12,18 +12,18 @@ This guide installs duet-send on macOS or Windows. It is written so that a perso
 your script / bot / Claude Code
         │  bun run duet "message"
         ▼
-   duet-send ── reads ──▶ duet-coordinator-session-id.txt (Google Drive)
+   duet-send ── reads ──▶ the description of duet-coordinator-session-id.txt (Google Drive)
         │
         │  claude -p "[tag] message" --cloud <session id>
         ▼
  Claude Duet coordinator (a cloud Claude Code session)
 ```
 
-The coordinator writes its own session id into the Drive file (see [DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md)). duet-send only reads it.
+The coordinator writes its own session id into the Drive file's **description** (the "Description" field in the file's details in Drive), and rewrites it there whenever its id changes (see [DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md)). It uses the description because Claude's Google Drive connector can change a file's description but not its content. duet-send only reads it. Files set up before this change, with the id only in the content, still work: when the description is empty, duet-send reads the content.
 
 ## 0. Before you start
 
-- **The id file must exist first.** Give the link to this repository to your Duet coordinator and ask it to set up duet-send. When it's done, `duet-coordinator-session-id.txt` is in the root of your My Drive. The coordinator also tells you the file's Drive file id; you don't need it, but it can speed up the `gws` route.
+- **The id file must exist first.** Give the link to this repository to your Duet coordinator and ask it to set up duet-send. When it's done, `duet-coordinator-session-id.txt` is in the root of your My Drive. The coordinator also tells you the file's Drive file id; you don't need it, but it can speed up the `gws` lookup.
 - You need a Claude plan with Claude Code and cloud sessions (Pro, Max, Team, or Enterprise with the right seat). Sending with `--cloud` requires signing in with your Claude account; it doesn't work with an API key alone or with Amazon Bedrock, Google Vertex AI or other third-party providers.
 - After installing anything in the steps below, **open a new terminal** before running the next command, so the new program is found.
 
@@ -98,24 +98,11 @@ If the first line ends in `.cmd`, either install the native version as shown abo
 
 ## 4. Give duet-send a way to read the id file
 
-Pick **one**.
+Use **Option A** if you can. Option B is a fallback.
 
-### Option A: Google Drive for desktop (recommended)
+### Option A: Google Workspace CLI (`gws`) (recommended)
 
-Install [Google Drive for desktop](https://www.google.com/drive/download/) and sign in with the Google account that holds the id file. Both "stream" and "mirror" modes work.
-
-duet-send looks in these places, in this order:
-
-- macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`), then `~/Google Drive/`
-- Windows: `G:\My Drive\` (or `マイドライブ\`), then `%USERPROFILE%\Google Drive\` and `%USERPROFILE%\My Drive\`, then the same folders on the other drive letters that exist (D to Z)
-
-If your Drive folder is somewhere else, set `DUET_ID_FILE` to the full path of the file (step 6). With `DUET_ID_FILE` set, duet-send reads only that file and doesn't try the folders above or `gws`. On Windows this also avoids waiting on a disconnected network drive during the search.
-
-On macOS, the first time a terminal reads the Drive folder, macOS may ask whether the terminal may access Google Drive files. Allow it.
-
-### Option B: Google Workspace CLI (`gws`)
-
-Use this on machines without Drive for desktop. `gws` is an open-source tool from the googleworkspace GitHub organization; it says it is not an officially supported Google product, and it is still before v1.0.
+This is the only way to read the file's description, so it always gets the id the coordinator wrote last. It works with or without Drive for desktop. `gws` is an open-source tool from the googleworkspace GitHub organization; it says it is not an officially supported Google product, and it is still before v1.0.
 
 Install it one of these ways:
 
@@ -134,29 +121,44 @@ gws auth login -s drive
 
 Note that the `drive` scope can read and write all of your Drive.
 
-That's all duet-send needs. It searches the root of **your own** My Drive for `duet-coordinator-session-id.txt` and downloads it. Files in subfolders, and files other people shared with you, are ignored. If you set `DUET_DRIVE_FILE_ID` (step 6), it skips the search and downloads that file directly.
+That's all duet-send needs. It searches the root of **your own** My Drive for `duet-coordinator-session-id.txt` and reads its description. If the description is empty, it downloads the file's content instead. Files in subfolders, and files other people shared with you, are ignored. If you set `DUET_DRIVE_FILE_ID` (step 6), it skips the search and reads that file directly.
 
 The easiest check is the dry run in step 7, which runs exactly the same search. To run the search by hand, use the command for your shell (all three send the same query as duet-send):
 
 macOS (zsh or bash):
 
 ```sh
-gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and 'root' in parents and 'me' in owners and trashed = false\"}"
+gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and 'root' in parents and 'me' in owners and trashed = false\",\"fields\":\"files(id,description)\"}"
 ```
 
 PowerShell 7.3 or later:
 
 ```powershell
-gws drive files list --params '{"q":"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false"}'
+gws drive files list --params '{"q":"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false","fields":"files(id,description)"}'
 ```
 
 Windows PowerShell 5.1 (the default `powershell.exe`):
 
 ```powershell
-gws drive files list --params '{\"q\":\"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false\"}'
+gws drive files list --params '{\"q\":\"name = ''duet-coordinator-session-id.txt'' and ''root'' in parents and ''me'' in owners and trashed = false\",\"fields\":\"files(id,description)\"}'
 ```
 
-You should see one file with its `id`. If your shell still mangles the quotes, use the dry run instead.
+You should see one file with its `id` and a `description` that starts with `session_` (if `description` is missing, the coordinator hasn't written it yet, and duet-send reads the content instead). The description is the full session id, so don't paste the output anywhere. If your shell still mangles the quotes, use the dry run instead.
+
+### Option B: Google Drive for desktop (fallback)
+
+A synced Drive folder only has the file's content, not its description. The coordinator can't change the content, so after the coordinator changes, the copy in this folder keeps the old id until someone updates the file's content by hand. Use this only where you can't use `gws`, or as a backup: when `gws` is set up too, duet-send asks `gws` first and uses this folder only if `gws` fails (with a warning).
+
+Install [Google Drive for desktop](https://www.google.com/drive/download/) and sign in with the Google account that holds the id file. Both "stream" and "mirror" modes work.
+
+duet-send looks in these places, in this order:
+
+- macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`), then `~/Google Drive/`
+- Windows: `G:\My Drive\` (or `マイドライブ\`), then `%USERPROFILE%\Google Drive\` and `%USERPROFILE%\My Drive\`, then the same folders on the other drive letters that exist (D to Z)
+
+If your Drive folder is somewhere else, set `DUET_ID_FILE` to the full path of the file (step 6). With `DUET_ID_FILE` set, duet-send reads only that file's content and doesn't try `gws` or the folders above. On Windows this also avoids waiting on a disconnected network drive during the search.
+
+On macOS, the first time a terminal reads the Drive folder, macOS may ask whether the terminal may access Google Drive files. Allow it.
 
 ## 5. Get duet-send
 
@@ -181,8 +183,8 @@ bun run check
 
 | Variable | When you need it |
 | --- | --- |
-| `DUET_ID_FILE` | The id file isn't in one of the folders in step 4. Turns off the folder search and `gws`. |
-| `DUET_DRIVE_FILE_ID` | Option B, only to skip the search by name |
+| `DUET_ID_FILE` | You keep a copy of the id file somewhere else and want duet-send to read only its content. Turns off `gws` and the folder search. |
+| `DUET_DRIVE_FILE_ID` | Option A, only to skip the search by name |
 | `DUET_DISCORD_WEBHOOK` | You want a Discord alert when sending fails |
 | `DUET_TAG` | You want a default tag other than `[Claude Code]` |
 | `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` isn't on PATH, or you run duet-send on a schedule (step 8) |
@@ -212,11 +214,13 @@ You should see something like this. The session id is shortened on purpose.
 
 ```
 to: session_01Ab…xyz
-(read from: /Users/you/Library/CloudStorage/GoogleDrive-.../My Drive/duet-coordinator-session-id.txt)
+(read from: gws (Google Drive, file description))
 claude: /Users/you/.local/bin/claude
 message:
 [Claude Code] duet-send test
 ```
+
+`read from:` says where the id came from: `file description` is the normal case. `file content` means the description is empty (ask the coordinator to fill it in), and a folder path means Drive for desktop was used.
 
 If you see an error, go to Troubleshooting below.
 
@@ -249,7 +253,7 @@ If the message may start with `-`, put `--` before it: `bun run duet -- "-5 test
 
 - the full path to `bun`: check it with `which bun` (macOS) or `(Get-Command bun).Source` (PowerShell). It depends on how you installed Bun; the official installer uses `~/.bun/bin/bun` and `%USERPROFILE%\.bun\bin\bun.exe`
 - `DUET_CLAUDE_BIN` set to the full path of `claude` (or `claude.exe`)
-- `DUET_GWS_BIN` set to the full path of `gws`, if you use Option B
+- `DUET_GWS_BIN` set to the full path of `gws`, if you use Option A
 - any other variables you use, such as `DUET_DISCORD_WEBHOOK`
 
 Example crontab line on macOS (replace `you` and the paths with yours):
@@ -419,12 +423,18 @@ duet-send guards against loops by itself: it skips the hook when `stop_hook_acti
 ## Troubleshooting
 
 **`duet-coordinator-session-id.txt was not found`**
-Neither Drive for desktop nor `gws` is available. Check that the file exists in My Drive in your browser, make sure Drive for desktop is running and signed in, or set up Option B. You can also set `DUET_ID_FILE` to the full path.
+Neither Drive for desktop nor `gws` is available. Check that the file exists in My Drive in your browser, set up Option A, or make sure Drive for desktop is running and signed in. You can also set `DUET_ID_FILE` to the full path.
 
-**`could not get the session id: no Drive for desktop folder has duet-coordinator-session-id.txt, and gws failed (see above)`**
-`gws` is installed but couldn't get the file. The line above this one says why; see the next entries.
+**`could not get the session id: gws failed (see above), and no Drive for desktop folder has duet-coordinator-session-id.txt`**
+`gws` is installed but couldn't get the id. The line above this one says why; see the next entries.
 
-**`gws could not search Drive ...` or `gws could not download the file ...` with `invalid_grant`, `error[auth]` or `401`**
+**`warning: falling back to the Drive for desktop copy`**
+`gws` failed (the line above says why), so duet-send used the file's content from your Drive folder. That content may hold an older id than the description. Fix `gws` so the description is used again.
+
+**`both the description and the content of Drive file ... are empty`**
+The coordinator hasn't written its id yet. Ask it to write its current session id into the file's description.
+
+**`gws could not search Drive ...`, `gws could not read Drive file ...` or `gws could not download the file ...` with `invalid_grant`, `error[auth]` or `401`**
 Your `gws` sign-in has expired or was revoked. Run `gws auth login -s drive` again, then retry.
 
 **`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
@@ -437,10 +447,10 @@ This is only a warning: duet-send goes on with the newest file. To get rid of it
 Fix the path, or unset `DUET_ID_FILE` to let duet-send search again.
 
 **`... does not contain a session id`**
-The file must hold exactly one line starting with `session_` (or `cse_`). Ask the coordinator to rewrite the file.
+The description (or, for the content, the file) must hold only the id, starting with `session_` (or `cse_`). Ask the coordinator to rewrite it. If the message says "the description of Drive file", the description has something else in it; in Drive you can see it under the file's details.
 
 **`cloud session session_… is archived and cannot accept new messages` or `Session not found`**
-The coordinator has changed and the file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and asks you before updating the file. If you set up the hourly check, this fixes itself within about an hour. If you use `DUET_SESSION_ID`, update it.
+The coordinator has changed and the file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and updates the file's description. If you use Drive for desktop only (Option B), the file's content isn't updated; set up `gws`, or update the content by hand. If you set up the hourly check, this fixes itself within about an hour. If you use `DUET_SESSION_ID`, update it.
 
 **`Unable to get organization UUID` or "Cloud sessions need a claude.ai sign-in"**
 Run `claude auth login` and sign in with your Claude account. An API key is not enough.
@@ -458,4 +468,4 @@ Open a new terminal after installing, or set `DUET_CLAUDE_BIN` to the full path.
 duet-send checks the drive letters that exist. A disconnected network drive can make that check wait. Set `DUET_ID_FILE` to skip the search.
 
 **Nothing arrives in Duet, but `duet: sent` was printed**
-Make sure `claude` is signed in to the same Claude account as Duet (`claude auth status`), and that the id in the file is the coordinator's current one (ask the coordinator).
+Make sure `claude` is signed in to the same Claude account as Duet (`claude auth status`), and that the id in the file's description is the coordinator's current one (ask the coordinator). The dry run's `read from:` line shows whether the id came from the description or the content.

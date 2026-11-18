@@ -4,13 +4,16 @@ You are reading this because your user gave you the link to this repository and 
 
 ## What duet-send needs from you
 
-duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in one plain-text file in the user's Google Drive:
+duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in the **description** of one plain-text file in the user's Google Drive:
 
 - File name: `duet-coordinator-session-id.txt` (exactly this name)
 - Location: the root of the user's **My Drive** (not a subfolder, not a shared drive)
-- Content: your session id and nothing else, on one line (for example `session_...`)
+- Description (the file's Drive `description` metadata): your session id and nothing else (for example `session_...`). This is what duet-send reads.
+- Content: your session id at the time you created the file. You don't need to keep it current.
 
-duet-send reads that file through Google Drive for desktop, or through the Google Workspace CLI (`gws`), which finds it by name in the root of the user's own My Drive. Keep exactly one such file.
+The id goes in the description because the Google Drive connector's update tool can change a file's description but not its content, so you can rewrite the description yourself whenever your id changes.
+
+duet-send reads the description through the Google Workspace CLI (`gws`), which finds the file by name in the root of the user's own My Drive. Only when the description is empty does it read the content, so files set up before this method keep working until you fill in the description. Google Drive for desktop can only see the content, so duet-send uses it only as a fallback. Keep exactly one such file.
 
 ## Setup steps
 
@@ -26,10 +29,11 @@ Don't use an id from your memory, an old message or this repository: it may belo
 
 1. Search the user's Drive for a file named `duet-coordinator-session-id.txt`.
 2. Ask the user in one line before writing, for example: "Should I create duet-coordinator-session-id.txt in the root of your My Drive with my current session id? duet-send reads it to find me." If a file with that name already exists, say so and ask whether to overwrite it instead of creating a second one.
-3. On their yes, create the file in the My Drive root (parent `root`), as plain text (`text/plain`), containing only the id. Use the Google Drive connector's create tool; to overwrite an existing file, use its update tool on that file's id.
-4. Note the **Drive file id** of the file you created or updated.
+3. On their yes, create the file in the My Drive root (parent `root`), as plain text (`text/plain`, with conversion to a Google Docs type turned off), containing only the id. Use the Google Drive connector's create tool.
+4. Then set the file's **description** to the id alone, with the connector's update tool on the new file's id (its `description` field). The create tool can't set a description itself. If the file already existed, skip step 3 and only set its description.
+5. Note the **Drive file id** of the file.
 
-If no Google Drive connector is connected, offer to connect one. If the user would rather not, write the id into a file named `duet-coordinator-session-id.txt` in your project folder, attach it to your message, and ask the user to upload it to the root of their My Drive themselves.
+If no Google Drive connector is connected, offer to connect one. If the user would rather not, write the id into a file named `duet-coordinator-session-id.txt` in your project folder, attach it to your message, and ask the user to upload it to the root of their My Drive themselves. duet-send then reads its content, and the user has to replace the file by hand each time your id changes.
 
 **Don't put the session id in a chat message.** Chat posts may strip or alter session ids. Deliver the id only through the Drive file or an attached file. The Drive file id is fine to show in chat.
 
@@ -46,7 +50,7 @@ These are records, not permissions: writing to Drive still needs the user's yes 
 
 ### 4. Tell the user the Drive file id
 
-Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install.
+Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install. Mention that `gws` is the recommended way to read the file, because only it can read the description; Google Drive for desktop alone doesn't pick up a new id.
 
 ### 5. Offer the hourly check (ask; create only on yes)
 
@@ -64,7 +68,7 @@ Each time you start as a new coordinator session (and whenever the hourly check 
 
 1. Call `get_session` with no `session_id` and compare the id with the one in memory.
 2. If it is the same, do nothing and say nothing about it.
-3. If it differs, update the id in memory right away. Then ask the user in one line before rewriting the Drive file, for example: "My session id changed; should I update duet-coordinator-session-id.txt in your Drive so duet-send can reach me?" On their yes, update **the same Drive file** (by its recorded Drive file id) so its content is only the new id. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
+3. If it differs, update the id in memory right away. Then ask the user in one line before rewriting the Drive file's description, for example: "My session id changed; should I update the description of duet-coordinator-session-id.txt in your Drive so duet-send can reach me?" On their yes, call the Google Drive connector's update tool on **the same Drive file** (by its recorded Drive file id) with `description` set to the new id alone. Leave the content as it is. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
 
 When the hourly check's post wakes you, run this check and don't relay the post itself to the user.
 
@@ -82,4 +86,6 @@ Messages sent with duet-send arrive as ordinary user turns with **no sender info
 
 - **`get_session` isn't in your tools:** search for it in your deferred tools. If it isn't available, tell the user you can't read your session id here, and that duet-send can still be used with `DUET_SESSION_ID` set by hand, although it goes stale when the coordinator changes.
 - **The user says duet-send reports "archived" or "Session not found":** run the session-start check above.
-- **The user reports "does not contain a session id":** the Drive file has extra content. Ask, then rewrite it with only your current id.
+- **The user reports "does not contain a session id":** the description (or, if the description is empty, the content) has something other than an id. Ask, then set the description to your current id alone.
+- **The user reports "both the description and the content ... are empty":** set the description to your current id (ask first).
+- **The user's dry run says `read from: ... (file content)` or shows a folder path:** duet-send isn't reading the description. If the description is empty, fill it in. If it shows a folder path, their computer uses Google Drive for desktop without a working `gws`; suggest setting up `gws` (Option A in the setup guide).
