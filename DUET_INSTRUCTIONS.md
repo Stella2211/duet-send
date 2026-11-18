@@ -13,7 +13,7 @@ duet-send runs on the user's computer and sends messages to you with `claude -p 
 
 The id goes in the description because the Google Drive connector's update tool can change a file's description but not its content, so you can rewrite the description yourself whenever your id changes.
 
-duet-send reads the description through the Google Workspace CLI (`gws`), which finds the file by name in the root of the user's own My Drive. Only when the description is empty does it read the content, so files set up before this method keep working until you fill in the description. Google Drive for desktop can only see the content, so duet-send uses it only as a fallback. Keep exactly one such file.
+duet-send reads the description through the Google Workspace CLI (`gws`), which finds the file by name in the root of the user's own My Drive. Only when the description is empty does it read the content, so files set up before this method keep working until you fill in the description. Keep exactly one such file.
 
 ## Setup steps
 
@@ -50,7 +50,7 @@ These are records, not permissions: writing to Drive still needs the user's yes 
 
 ### 4. Tell the user the Drive file id
 
-Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install. Mention that `gws` is the recommended way to read the file, because only it can read the description; Google Drive for desktop alone doesn't pick up a new id.
+Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install. duet-send needs `gws` on their computer, because only the Drive API can read a file's description.
 
 ### 5. Offer the hourly check (ask; create only on yes)
 
@@ -88,4 +88,4 @@ Messages sent with duet-send arrive as ordinary user turns with **no sender info
 - **The user says duet-send reports "archived" or "Session not found":** run the session-start check above.
 - **The user reports "does not contain a session id":** the description (or, if the description is empty, the content) has something other than an id. Ask, then set the description to your current id alone.
 - **The user reports "both the description and the content ... are empty":** set the description to your current id (ask first).
-- **The user's dry run says `read from: ... (file content)` or shows a folder path:** duet-send isn't reading the description. If the description is empty, fill it in. If it shows a folder path, their computer uses Google Drive for desktop without a working `gws`; suggest setting up `gws` (Option A in the setup guide).
+- **The user's dry run says `read from: ... (file content)`:** the description is empty, so duet-send fell back to the content. Set the description to your current id (ask first).

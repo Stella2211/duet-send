@@ -32,7 +32,7 @@ bun run duet "夜間ビルドが終わりました。テストが3件落ちて�
 - [git](https://git-scm.com/downloads)（なければ、下のように ZIP でダウンロードしても構いません）
 - [Bun](https://bun.com)
 - ネイティブ版の [Claude Code](https://code.claude.com/docs/en/setup)（`claude auth login` でサインイン済み）
-- Google Workspace CLI（`gws`）。IDファイルがある Google アカウントでサインインしておきます。Google Drive for desktop も予備として使えますが、見えるのはファイルの本文だけで説明欄は見えないため、新しいIDを自動では拾えません。
+- Google Workspace CLI（`gws`）。IDファイルがある Google アカウントでサインインしておきます
 
 ```sh
 git clone https://github.com/Stella2211/duet-send.git
@@ -71,18 +71,13 @@ bun /path/to/duet-send/send.ts --tag "[バックアップ]" "バックアップ�
 
 次の順に探して、最初に見つかったものを使います。
 
-1. `DUET_ID_FILE`：本文にIDが入ったファイルのフルパス。これを設定すると、2と3は行いません。
-2. Google Workspace CLI（`gws`）：自分のマイドライブ直下からファイルを探し（`DUET_DRIVE_FILE_ID` があればそのファイルを使い）、ファイルの **説明欄** を読みます。説明欄が空のときは、代わりにファイルの本文をダウンロードします。説明欄を使う前に用意したファイルも、そのまま使えます。他人から共有されたファイルは無視します。
-3. Google Drive for desktop のフォルダ。`gws` が入っていないか失敗したときだけ使います（失敗したときは警告を出します）。同期フォルダにあるのはファイルの本文だけなので、説明欄より古いIDのことがあります。
-   - macOS：`~/Library/CloudStorage/GoogleDrive-*/マイドライブ/`（または `My Drive/`）、次に `~/Google Drive/`
-   - Windows：`G:\マイドライブ\`（または `My Drive\`）、次に `%USERPROFILE%\Google Drive\` と `%USERPROFILE%\My Drive\`、最後に存在するほかのドライブ文字（D〜Z）の同じフォルダ
-4. `DUET_SESSION_ID`：IDそのもの
+1. Google Workspace CLI（`gws`）：自分のマイドライブ直下からファイルを探し（`DUET_DRIVE_FILE_ID` があればそのファイルを使い）、ファイルの **説明欄** を読みます。説明欄が空のときは、代わりにファイルの本文をダウンロードします。説明欄を使う前に用意したファイルも、そのまま使えます。他人から共有されたファイルは無視します。
+2. `DUET_SESSION_ID`：IDそのもの
 
 ## 環境変数（すべて任意）
 
 | 変数 | 役割 |
 | --- | --- |
-| `DUET_ID_FILE` | 本文にIDが入ったファイルのフルパス。設定すると、`gws` とドライブのフォルダ探しを使いません。 |
 | `DUET_DRIVE_FILE_ID` | `duet-coordinator-session-id.txt` の Drive ファイルID。`gws` が名前で探す手間を省き、そのファイルの説明欄を直接読みます。 |
 | `DUET_SESSION_ID` | 最後の手段として、IDそのものを指定します。コーディネーターが変わると古くなります。 |
 | `DUET_TAG` | メッセージの先頭に付ける既定のタグ。既定値は `[Claude Code]` です。 |

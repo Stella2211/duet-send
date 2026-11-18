@@ -32,7 +32,7 @@ You need:
 - [git](https://git-scm.com/downloads), or download this repository as a ZIP instead (below)
 - [Bun](https://bun.com)
 - The native [Claude Code](https://code.claude.com/docs/en/setup), signed in with `claude auth login`
-- The Google Workspace CLI (`gws`), signed in to the Google account that holds the id file. Google Drive for desktop also works as a fallback, but it can only see the file's content, not its description, so it doesn't pick up a new id by itself.
+- The Google Workspace CLI (`gws`), signed in to the Google account that holds the id file
 
 ```sh
 git clone https://github.com/Stella2211/duet-send.git
@@ -71,18 +71,13 @@ Optional: duet-send can also run as a Claude Code [Stop hook](https://code.claud
 
 duet-send uses the first one it finds:
 
-1. `DUET_ID_FILE`: the full path to a file whose content is the id. When this is set, steps 2 and 3 are skipped.
-2. The Google Workspace CLI (`gws`): it looks for the file in the root of your own My Drive (or uses `DUET_DRIVE_FILE_ID` if that is set) and reads the file's **description**. If the description is empty, it downloads the file's content instead, so files set up before the description was used keep working. Files other people shared with you are ignored.
-3. The Google Drive for desktop folder, only if `gws` isn't installed or fails (with a warning). A synced folder only has the file's content, which may hold an older id than the description.
-   - macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/` (or `マイドライブ/`), then `~/Google Drive/`
-   - Windows: `G:\My Drive\` (or `マイドライブ\`), then `%USERPROFILE%\Google Drive\` and `%USERPROFILE%\My Drive\`, then the same folders on the other drive letters that exist (D to Z)
-4. `DUET_SESSION_ID`: the id itself.
+1. The Google Workspace CLI (`gws`): it looks for the file in the root of your own My Drive (or uses `DUET_DRIVE_FILE_ID` if that is set) and reads the file's **description**. If the description is empty, it downloads the file's content instead, so files set up before the description was used keep working. Files other people shared with you are ignored.
+2. `DUET_SESSION_ID`: the id itself.
 
 ## Environment variables (all optional)
 
 | Variable | What it does |
 | --- | --- |
-| `DUET_ID_FILE` | Full path to a file whose content is the id. Turns off `gws` and the Drive folder search. |
 | `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`, so `gws` can skip the search by name and read that file's description directly. |
 | `DUET_SESSION_ID` | The session id itself, as a last resort. It goes stale when the coordinator changes. |
 | `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]` |

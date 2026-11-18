@@ -11,24 +11,18 @@
  * The coordinator keeps its session id in the Drive *description* of
  * duet-coordinator-session-id.txt in the root of your My Drive (its Drive connector
  * can change a file's description but not its content). Lookup order:
- *   1. DUET_ID_FILE (full path to a file whose content is the id)
- *   2. Google Workspace CLI (gws): reads the file's description straight from Drive,
+ *   1. Google Workspace CLI (gws): reads the file's description straight from Drive,
  *      or its content when the description is empty (finds the file in your My Drive
  *      root, or uses DUET_DRIVE_FILE_ID if set)
- *   3. The Google Drive for desktop sync folder (file content only; a synced folder
- *      can't show the description, so this copy may be older)
- *      mac: ~/Library/CloudStorage/GoogleDrive-*\/{My Drive,マイドライブ}/
- *      win: <drive letter>:\{My Drive,マイドライブ}\  and  %USERPROFILE%\Google Drive\
- *   4. DUET_SESSION_ID (the id itself)
+ *   2. DUET_SESSION_ID (the id itself)
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const FILE_NAME = "duet-coordinator-session-id.txt";
-const DRIVE_ROOTS = ["My Drive", "マイドライブ"];
 // Claude Code accepts both session_... and cse_... ids for `--cloud`.
 const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 const MAX_LEN = 8000;
@@ -93,37 +87,6 @@ async function readStdin(): Promise<string> {
 }
 
 // ---------- where the session id lives ----------
-// A generator, so the search stops at the first file found.
-function* candidatePaths(): Generator<string> {
-  const home = homedir();
-
-  if (process.platform === "darwin") {
-    const cloud = join(home, "Library", "CloudStorage");
-    if (existsSync(cloud)) {
-      for (const d of readdirSync(cloud)) {
-        if (!d.startsWith("GoogleDrive-")) continue;
-        for (const root of DRIVE_ROOTS) yield join(cloud, d, root, FILE_NAME);
-      }
-    }
-    // legacy Backup and Sync location
-    yield join(home, "Google Drive", FILE_NAME);
-  } else if (process.platform === "win32") {
-    // Drive for desktop uses G: by default. Then the folders in the user profile,
-    // then the other drive letters in case G: was changed. Letters that don't exist
-    // are skipped with one quick check each.
-    const tryLetter = function* (letter: string) {
-      if (!existsSync(`${letter}:\\`)) return;
-      for (const root of DRIVE_ROOTS) yield `${letter}:\\${root}\\${FILE_NAME}`;
-    };
-    yield* tryLetter("G");
-    yield join(home, "Google Drive", FILE_NAME);
-    yield join(home, "My Drive", FILE_NAME);
-    for (const letter of "DEFHIJKLMNOPQRSTUVWXYZ") yield* tryLetter(letter);
-  } else {
-    yield join(home, "Google Drive", FILE_NAME);
-  }
-}
-
 function parseId(raw: string, where: string): string {
   const id = raw.replace(/^\uFEFF/, "").trim();
   if (!ID_PATTERN.test(id)) fail(`${where} does not contain a session id (expected session_... or cse_...): "${id.slice(0, 60)}"`);
@@ -292,61 +255,18 @@ async function readViaGws(gws: string): Promise<{ id: string; source: string } |
   }
 }
 
-// Reads the first id file that exists in the Drive for desktop folders.
-function readSyncedFile(paths: Iterable<string>): { id: string; source: string } | null {
-  for (const p of paths) {
-    let raw: string;
-    try {
-      if (!existsSync(p)) continue;
-      raw = readFileSync(p, "utf8");
-    } catch {
-      continue;
-    }
-    return { id: parseId(raw, p), source: p };
-  }
-  return null;
-}
-
 async function resolveSessionId(): Promise<{ id: string; source: string }> {
-  const fromEnvFile = process.env.DUET_ID_FILE;
-  if (fromEnvFile) {
-    const found = readSyncedFile([fromEnvFile]);
-    if (found) return found;
-  } else {
-    // gws first: only the Drive API can read the description, which is where the
-    // coordinator keeps the current id. A synced folder only has the file content.
-    const gws = process.env.DUET_GWS_BIN ?? Bun.which("gws");
-    let gwsFailed = false;
-    if (gws) {
-      const viaGws = await readViaGws(gws);
-      if (viaGws) return viaGws;
-      gwsFailed = true;
-    }
-
-    const synced = readSyncedFile(candidatePaths());
-    if (synced) {
-      if (gwsFailed) {
-        console.error(
-          "duet: warning: falling back to the Drive for desktop copy. It has only the file content, " +
-            "which may be older than the id in the file's description.",
-        );
-      }
-      return { id: synced.id, source: `${synced.source} (file content)` };
-    }
-
-    if (gwsFailed && !process.env.DUET_SESSION_ID?.trim()) {
-      fail(`could not get the session id: gws failed (see above), and no Drive for desktop folder has ${FILE_NAME}.`);
-    }
+  const gws = process.env.DUET_GWS_BIN ?? Bun.which("gws");
+  if (gws) {
+    const viaGws = await readViaGws(gws);
+    if (viaGws) return viaGws;
   }
 
   const direct = process.env.DUET_SESSION_ID?.trim();
   if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
 
-  if (fromEnvFile) fail(`DUET_ID_FILE points to a file that does not exist: ${fromEnvFile}`);
-  fail(
-    `${FILE_NAME} was not found. Install gws (Google Workspace CLI) or Google Drive for desktop, ` +
-      "or set DUET_ID_FILE / DUET_SESSION_ID.",
-  );
+  if (gws) fail("could not get the session id: gws failed (see above).");
+  fail("gws (Google Workspace CLI) was not found. Install it (see the setup guide), set DUET_GWS_BIN, or set DUET_SESSION_ID.");
 }
 
 // ---------- claude CLI ----------
