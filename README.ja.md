@@ -20,15 +20,15 @@ bun run duet "夜間ビルドが終わりました。テストが3件落ちて�
 
 このリポジトリのリンクをAIに渡して、導入を頼んでください。
 
-1. **Claude Duet（メインのチャット）で**：「<リポジトリのリンク> の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿って動きます。Google ドライブにIDのファイルを書く前と、IDがまだ有効かを1時間ごとに確かめる仕組みを作る前に、あなたに確認します。
-2. **手元のパソコンの Claude Code で**：「<リポジトリのリンク> の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。必要なら Bun を入れ、このリポジトリを取ってきて、送信のリハーサル（dry run）まで行います。
+1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿って動きます。Google ドライブにIDのファイルを書く前と、IDがまだ有効かを1時間ごとに確かめる仕組みを作る前に、あなたに確認します。
+2. **手元のパソコンの Claude Code で**：「https://github.com/Stella2211/duet-send の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。必要なら Bun を入れ、このリポジトリを取ってきて、送信のリハーサル（dry run）まで行います。
 
 ## 手で導入する
 
 [Bun](https://bun.com)、ネイティブ版の [Claude Code](https://code.claude.com/docs/en/setup)（`claude auth login` でサインイン済み）、それに Google Drive for desktop か Google Workspace CLI（`gws`）のどちらかが必要です。
 
 ```sh
-git clone <このリポジトリ> duet-send
+git clone https://github.com/Stella2211/duet-send.git
 cd duet-send
 bun run duet --dry-run "テスト"   # 宛先と本文を表示するだけで、送りません
 bun run duet "テスト"             # 実際に送ります
@@ -59,14 +59,14 @@ bun /path/to/duet-send/send.ts --tag "[バックアップ]" "バックアップ�
 
 1. `DUET_ID_FILE`：IDファイルのフルパス
 2. Google Drive for desktop のフォルダ：**マイドライブ**（`My Drive`）直下の `duet-coordinator-session-id.txt`
-3. Google Workspace CLI（`gws`）：Drive のファイルID（`DUET_DRIVE_FILE_ID`）を使って直接ダウンロード
+3. Google Workspace CLI（`gws`）：自分のマイドライブ直下からファイルを探してダウンロード（`DUET_DRIVE_FILE_ID` があればそれを使います）
 4. `DUET_SESSION_ID`：IDそのもの
 
 ## 環境変数（すべて任意）
 
 | 変数 | 役割 |
 | --- | --- |
-| `DUET_DRIVE_FILE_ID` | `duet-coordinator-session-id.txt` の Drive ファイルID。`gws` を使うときだけ必要です。 |
+| `DUET_DRIVE_FILE_ID` | `duet-coordinator-session-id.txt` の Drive ファイルID。なくても `gws` が名前で探すので任意です。設定すると検索を省きます。 |
 | `DUET_ID_FILE` | IDファイルが通常の Drive フォルダにないときのフルパス。 |
 | `DUET_SESSION_ID` | 最後の手段として、IDそのものを指定します。 |
 | `DUET_TAG` | メッセージの先頭に付ける既定のタグ。既定値は `[Claude Code]` です。 |

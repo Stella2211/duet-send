@@ -20,15 +20,15 @@ bun run duet "The nightly build finished. 3 tests failed, please take a look."
 
 Give the link to this repository to your AI assistants and ask them to set it up:
 
-1. **In Claude Duet** (your main chat): "Set up duet-send from <repo link>." The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md). It asks before it writes the id file to your Google Drive, and asks whether you want an hourly check that the id is still valid.
-2. **In Claude Code on your computer**: "Install duet-send from <repo link> by following docs/setup-guide.md." It installs Bun if needed, clones this repository and runs a dry run.
+1. **In Claude Duet** (your main chat): "Set up duet-send from https://github.com/Stella2211/duet-send" The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md). It asks before it writes the id file to your Google Drive, and asks whether you want an hourly check that the id is still valid.
+2. **In Claude Code on your computer**: "Install duet-send from https://github.com/Stella2211/duet-send by following docs/setup-guide.md." It installs Bun if needed, clones this repository and runs a dry run.
 
 ## Quick start (by hand)
 
 You need [Bun](https://bun.com), the native [Claude Code](https://code.claude.com/docs/en/setup) signed in with `claude auth login`, and either Google Drive for desktop or the Google Workspace CLI (`gws`).
 
 ```sh
-git clone <this repository> duet-send
+git clone https://github.com/Stella2211/duet-send.git
 cd duet-send
 bun run duet --dry-run "hello"   # shows the target session and the message, sends nothing
 bun run duet "hello"             # sends it
@@ -59,14 +59,14 @@ duet-send uses the first one it finds:
 
 1. `DUET_ID_FILE`: full path to the id file
 2. The Google Drive for desktop folder: `duet-coordinator-session-id.txt` in **My Drive** (also `マイドライブ`)
-3. The Google Workspace CLI (`gws`), downloading the file by its Drive file id (`DUET_DRIVE_FILE_ID`)
+3. The Google Workspace CLI (`gws`): it finds the file in the root of your own My Drive and downloads it (or uses `DUET_DRIVE_FILE_ID` if set)
 4. `DUET_SESSION_ID`: the id itself
 
 ## Environment variables (all optional)
 
 | Variable | What it does |
 | --- | --- |
-| `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`. Needed only for the `gws` route. |
+| `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`. Optional: with `gws`, duet-send finds the file by name; set this to skip the search. |
 | `DUET_ID_FILE` | Full path to the id file, if it isn't in the usual Drive folder. |
 | `DUET_SESSION_ID` | The session id itself, as a last resort. |
 | `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]` |

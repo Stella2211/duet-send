@@ -23,7 +23,7 @@ macOS または Windows に duet-send を入れる手順です。人が読みな
 
 ## 0. 始める前に
 
-- まず Duet のコーディネーターに、このリポジトリのリンクを渡して設定してもらってください。終わると、マイドライブ直下に `duet-coordinator-session-id.txt` ができ、コーディネーターがそのファイルの Drive ファイルIDを教えてくれます（`gws` を使う場合だけ必要です）。
+- まず Duet のコーディネーターに、このリポジトリのリンクを渡して設定してもらってください。終わると、マイドライブ直下に `duet-coordinator-session-id.txt` ができ、コーディネーターがそのファイルの Drive ファイルIDを教えてくれます（任意。使えるのは `gws` の場合だけです）。
 - Claude Code とクラウドセッションが使えるプランが必要です（Pro、Max、Team、または対応する席の Enterprise）。`--cloud` での送信には Claude アカウントでのサインインが必要で、APIキーだけの場合や、Amazon Bedrock・Google Vertex AI などの外部プロバイダー経由では使えません。
 
 ## 1. Bun を入れる
@@ -106,24 +106,28 @@ gws auth login -s drive
 
 `drive` スコープはドライブ全体を読み書きできる権限なので注意してください。
 
-`DUET_DRIVE_FILE_ID` に、コーディネーターが教えてくれた Drive ファイルIDを設定します（手順5）。duet-send は中で次のコマンドを実行します。`gws` が動くか確かめるため、一度手で試してください。
+設定はこれだけです。duet-send は自分のマイドライブ直下から `duet-coordinator-session-id.txt` を探してダウンロードします（他人から共有されたファイルは無視します）。`DUET_DRIVE_FILE_ID`（手順5）を設定すると、検索を省いてそのファイルを直接ダウンロードします。
+
+`gws` からファイルが見えるか確かめるには、次を実行します。
 
 ```sh
-gws drive files get --params '{"fileId":"<DriveファイルID>","alt":"media"}' -o id.txt
+gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and trashed = false\"}"
 ```
 
-PowerShell 7.3 以降でも同じ書き方で動きます。古い Windows PowerShell 5.1 では内側の引用符が消えてしまうので、次のようにエスケープします。
+PowerShell 7.3 以降では次のように書きます。
 
 ```powershell
-gws drive files get --params '{\"fileId\":\"<DriveファイルID>\",\"alt\":\"media\"}' -o id.txt
+gws drive files list --params '{"q":"name = ''duet-coordinator-session-id.txt'' and trashed = false"}'
 ```
 
-`id.txt` に `session_` で始まる1行が入っていれば成功です。確認したら削除してください。
+古い Windows PowerShell 5.1 では内側のダブルクォートが消えてしまうので、`"` をそれぞれ `\"` にエスケープしてください。
+
+ファイルが1件、`id` 付きで表示されれば成功です。`gws` がエラーを出す場合は duet-send も同じエラーを表示するので、先にそれを直してください（多くは `gws auth login -s drive` のやり直しで直ります）。
 
 ## 4. duet-send を取ってくる
 
 ```sh
-git clone <このリポジトリ> duet-send
+git clone https://github.com/Stella2211/duet-send.git
 cd duet-send
 ```
 
@@ -139,7 +143,7 @@ bun run check
 
 | 変数 | 必要になるとき |
 | --- | --- |
-| `DUET_DRIVE_FILE_ID` | 方法B（`gws`）を使うとき |
+| `DUET_DRIVE_FILE_ID` | 方法B（`gws`）で、名前での検索を省きたいとき |
 | `DUET_ID_FILE` | IDファイルが通常のドライブのフォルダにないとき |
 | `DUET_DISCORD_WEBHOOK` | 送信に失敗したら Discord に知らせてほしいとき |
 | `DUET_TAG` | 既定のタグを `[Claude Code]` 以外にしたいとき |
@@ -196,7 +200,7 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 ## トラブルシューティング
 
 **`duet-coordinator-session-id.txt was not found`**
-Drive for desktop が起動していない、サインインしていない、またはフォルダが別の場所にあります。ブラウザでマイドライブにファイルがあるか確認し、同期を待つか、`DUET_ID_FILE` にフルパスを設定してください。`gws` を使う場合は `DUET_DRIVE_FILE_ID` が設定されているか確認してください。
+Drive for desktop が起動していない、サインインしていない、またはフォルダが別の場所にあります。ブラウザでマイドライブにファイルがあるか確認し、同期を待つか、`DUET_ID_FILE` にフルパスを設定してください。`gws` を使う場合は、このメッセージの上に出ている `gws` のエラーを見てください。
 
 **`... does not contain a session id`**
 ファイルの中身は、`session_`（または `cse_`）で始まる1行だけでなければいけません。コーディネーターに書き直してもらってください。
@@ -216,8 +220,14 @@ Team や Enterprise のプランでは、組織のオーナーが Claude Code �
 **`claude was not found`**
 インストール後に新しいターミナルを開くか、`DUET_CLAUDE_BIN` にフルパスを設定してください。
 
-**`gws could not download the file`**
-手順3の `gws drive files get` を手で実行して、エラーの全文を見てください。多くの場合、`gws auth login -s drive` をもう一度実行すれば直ります。
+**`gws could not search Drive` または `gws could not download the file`**
+行の後半は `gws` 自身のエラーです。`error[auth]` や `401` なら、`gws auth login -s drive` をもう一度実行してください。
+
+**`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
+ファイルがない、サブフォルダにある、または別のアカウントが持ち主になっています。コーディネーターにマイドライブ直下へ作ってもらうか、`DUET_DRIVE_FILE_ID` を設定してください。
+
+**`found 2 files named duet-coordinator-session-id.txt`**
+duet-send は一番新しいものを使います。古いものをドライブから削除するか、`DUET_DRIVE_FILE_ID` を設定してください。
 
 **`duet: sent` と出たのに Duet に届かない**
 `claude` が Duet と同じ Claude アカウントでサインインしているか（`claude auth status`）と、ファイルのIDがコーディネーターの今のIDか（コーディネーターに聞いてください）を確認してください。

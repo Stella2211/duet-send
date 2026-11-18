@@ -10,7 +10,7 @@ duet-send runs on the user's computer and sends messages to you with `claude -p 
 - Location: the root of the user's **My Drive** (not a subfolder, not a shared drive)
 - Content: your session id and nothing else, on one line (for example `session_...`)
 
-duet-send reads that file, through Google Drive for desktop or through the Google Workspace CLI (`gws`) by its Drive file id.
+duet-send reads that file through Google Drive for desktop, or through the Google Workspace CLI (`gws`), which finds it by name in the root of the user's own My Drive. Keep exactly one such file.
 
 ## Setup steps
 
@@ -46,7 +46,7 @@ These are records, not permissions: writing to Drive still needs the user's yes 
 
 ### 4. Tell the user the Drive file id
 
-Tell them the Drive file id and that it goes in the `DUET_DRIVE_FILE_ID` environment variable, which they need only if they use `gws` instead of Google Drive for desktop. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install.
+Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install.
 
 ### 5. Offer the hourly check (ask; create only on yes)
 
@@ -64,7 +64,7 @@ Each time you start as a new coordinator session (and whenever the hourly check 
 
 1. Call `get_session` with no `session_id` and compare the id with the one in memory.
 2. If it is the same, do nothing and say nothing about it.
-3. If it differs, update the id in memory right away. Then ask the user in one line before rewriting the Drive file, for example: "My session id changed; should I update duet-coordinator-session-id.txt in your Drive so duet-send can reach me?" On their yes, update **the same Drive file** (by its recorded Drive file id) so its content is only the new id. Don't create a new file; that would give it a new Drive file id and break `DUET_DRIVE_FILE_ID`.
+3. If it differs, update the id in memory right away. Then ask the user in one line before rewriting the Drive file, for example: "My session id changed; should I update duet-coordinator-session-id.txt in your Drive so duet-send can reach me?" On their yes, update **the same Drive file** (by its recorded Drive file id) so its content is only the new id. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
 
 When the hourly check's post wakes you, run this check and don't relay the post itself to the user.
 
