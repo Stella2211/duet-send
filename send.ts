@@ -15,9 +15,12 @@
  *      or its content when the description is empty (finds the file in your My Drive
  *      root, or uses DUET_DRIVE_FILE_ID if set)
  *   2. DUET_SESSION_ID (the id itself)
+ * On macOS, gws is skipped while the login keychain is locked (see macKeychainLocked):
+ * DUET_SESSION_ID is used if set, otherwise duet-send stops and asks to unlock it.
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -255,14 +258,67 @@ async function readViaGws(gws: string): Promise<{ id: string; source: string } |
   }
 }
 
+// On macOS, gws keeps the key for credentials.enc in the default (login) keychain. When gws
+// runs while that keychain is locked (for example over SSH, or from a job outside the
+// logged-in session), it treats credentials.enc as undecryptable, deletes it, and falls back
+// to gcloud's Application Default Credentials, which have no Drive scope. So gws is not run then.
+// `security show-keychain-info` is not used for this check: on a locked keychain it opens an
+// unlock dialog and waits. SecKeychainGetStatus only reads the state and never prompts.
+// Returns true only when the keychain is known to be locked; on any doubt it returns false
+// and duet-send behaves as before.
+const kSecUnlockStateStatus = 1;
+
+function macKeychainLocked(): boolean {
+  if (process.platform !== "darwin") return false;
+  try {
+    const sec = dlopen("/System/Library/Frameworks/Security.framework/Security", {
+      SecKeychainCopyDefault: { args: [FFIType.ptr], returns: FFIType.i32 },
+      SecKeychainGetStatus: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    });
+    const cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
+      CFRelease: { args: [FFIType.ptr], returns: FFIType.void },
+    });
+    try {
+      const ref = new BigUint64Array(1);
+      if (sec.symbols.SecKeychainCopyDefault(ptr(ref)) !== 0 || ref[0] === 0n) return false;
+      const keychain = Number(ref[0]);
+      try {
+        const status = new Uint32Array(1);
+        if (sec.symbols.SecKeychainGetStatus(keychain, ptr(status)) !== 0) return false;
+        return (status[0] & kSecUnlockStateStatus) === 0;
+      } finally {
+        cf.symbols.CFRelease(keychain);
+      }
+    } finally {
+      sec.close();
+      cf.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
 async function resolveSessionId(): Promise<{ id: string; source: string }> {
   const gws = process.env.DUET_GWS_BIN ?? Bun.which("gws");
+  const direct = process.env.DUET_SESSION_ID?.trim();
+
+  if (gws && macKeychainLocked()) {
+    if (direct) {
+      console.error("duet: the login keychain is locked, so gws is skipped and DUET_SESSION_ID is used.");
+      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (login keychain locked, gws skipped)" };
+    }
+    fail(
+      "the macOS login keychain is locked, so gws was not run (gws deletes its saved sign-in when it cannot read the keychain). " +
+        "Unlock the keychain and try again: log in to this Mac, or run `security unlock-keychain` in this session. " +
+        "Over SSH or in a background job, set DUET_SESSION_ID instead.",
+    );
+  }
+
   if (gws) {
     const viaGws = await readViaGws(gws);
     if (viaGws) return viaGws;
   }
 
-  const direct = process.env.DUET_SESSION_ID?.trim();
   if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
 
   if (gws) fail("could not get the session id: gws failed (see above).");

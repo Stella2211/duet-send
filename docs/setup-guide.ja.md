@@ -414,6 +414,12 @@ hook は Claude Code の環境変数を引き継ぐので、手順6の変数は�
 **`gws could not search Drive ...`、`gws could not read Drive file ...` または `gws could not download the file ...` に `invalid_grant`、`error[auth]`、`401` が含まれる**
 `gws` のサインインが切れたか、取り消されています。`gws auth login -s drive` をもう一度実行してから、やり直してください。
 
+**`the macOS login keychain is locked, so gws was not run`**
+`gws` はサインイン情報の鍵をログインキーチェーンに置いていて、キーチェーンを読めないと保存したサインイン情報を消してしまいます。そのため duet-send は、キーチェーンがロックされている間は `gws` を呼びません。Mac にログインする（画面のロックを解除する）か、そのセッションで `security unlock-keychain` を実行してから、やり直してください。SSH 経由やバックグラウンドのジョブでは、代わりに `DUET_SESSION_ID` を設定してください。その場合は `gws` を呼ばずにそのIDを使います。
+
+**`gws auth login` のあとも `Request had insufficient authentication scopes` が出る**
+`gws` がどこかでサインイン情報を失い、Drive の権限がない gcloud のアプリケーションのデフォルト認証情報（ADC）を使ったうえ、そのトークンを保存しています。`gws auth status` を実行し、`auth_method` が `none` なら `gws auth login -s drive` を実行してください。`oauth2` で Drive のスコープがあるなら、`~/.config/gws/token_cache.json`（ただのキャッシュで、作り直されます）を削除してからやり直してください。
+
 **`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
 ファイルがない、サブフォルダにある、または別のアカウントが持ち主になっています。コーディネーターにマイドライブ直下へ作ってもらうか、`DUET_DRIVE_FILE_ID` を設定してください。
 

@@ -74,6 +74,8 @@ duet-send uses the first one it finds:
 1. The Google Workspace CLI (`gws`): it looks for the file in the root of your own My Drive (or uses `DUET_DRIVE_FILE_ID` if that is set) and reads the file's **description**. If the description is empty, it downloads the file's content instead, so files set up before the description was used keep working. Files other people shared with you are ignored.
 2. `DUET_SESSION_ID`: the id itself.
 
+On macOS, `gws` is not run while the login keychain is locked (for example over SSH or in a job outside your logged-in session). In that state `gws` would delete its saved sign-in, because the key for it is in that keychain. duet-send then uses `DUET_SESSION_ID` if it is set, and otherwise stops and asks you to unlock the keychain.
+
 ## Environment variables (all optional)
 
 | Variable | What it does |

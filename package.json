@@ -1,6 +1,6 @@
 {
   "name": "duet-send",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Send a message from your computer to your Claude Duet coordinator with claude -p --cloud",
   "private": true,
   "type": "module",
