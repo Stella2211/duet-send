@@ -424,7 +424,7 @@ This is only a warning: duet-send goes on with the newest file. To get rid of it
 The description (or, for the content, the file) must hold only the id, starting with `session_` (or `cse_`). Ask the coordinator to rewrite it. If the message says "the description of Drive file", the description has something else in it; in Drive you can see it under the file's details.
 
 **`cloud session session_… is archived and cannot accept new messages` or `Session not found`**
-The coordinator has changed and the file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and updates the file's description. If you set up the hourly check, this fixes itself within about an hour. If you use `DUET_SESSION_ID`, update it.
+The coordinator has changed and the file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and updates the file's description. If you set up the hourly wake signal, this fixes itself within about an hour. (If it doesn't, ask the coordinator to look at the routine's prompt: an older version had the routine check the id itself, which fails silently.) If you use `DUET_SESSION_ID`, update it.
 
 **`Unable to get organization UUID` or "Cloud sessions need a claude.ai sign-in"**
 Run `claude auth login` and sign in with your Claude account. An API key is not enough.

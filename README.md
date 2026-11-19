@@ -20,7 +20,7 @@ bun run duet "The nightly build finished. 3 tests failed, please take a look."
 
 Give the link to this repository to your AI assistants and ask them to set it up, in this order:
 
-1. **In Claude Duet** (your main chat): "Set up duet-send from https://github.com/Stella2211/duet-send". The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) and creates the id file. It asks before it writes to your Google Drive, and asks whether you want an hourly check that the id is still valid.
+1. **In Claude Duet** (your main chat): "Set up duet-send from https://github.com/Stella2211/duet-send". The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) and creates the id file. It asks before it writes to your Google Drive, and asks whether you want an hourly signal that wakes it to re-check its id.
 2. **In Claude Code on your computer**: "Install duet-send from https://github.com/Stella2211/duet-send by following docs/setup-guide.md". It installs what's missing, downloads this repository and runs a dry run.
 
 ## Quick start (by hand)
