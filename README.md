@@ -10,7 +10,7 @@ Claude Duet's coordinator runs as a cloud Claude Code session. Claude Code can a
 - duet-send reads that description and sends your message to the right session.
 - If sending fails (for example because the id went stale), it can alert you on Discord.
 
-Use it to let a build script, a Discord bot, a scheduled job or a local Claude Code session hand work to your Duet coordinator. Works on **macOS and Windows**.
+Use it to let a build script, a Discord bot, a scheduled job or a local Claude Code session hand work to your Duet coordinator. Works on **macOS, Linux and Windows**.
 
 ```sh
 bun run duet "The nightly build finished. 3 tests failed, please take a look."
@@ -43,7 +43,7 @@ bun run duet "hello"             # sends it
 
 Without git: on the repository page, choose **Code → Download ZIP**, extract it, and open a terminal in the extracted folder.
 
-The full walkthrough for macOS and Windows, including scheduled runs and troubleshooting, is in the [setup guide](docs/setup-guide.md).
+The full walkthrough for macOS, Linux and Windows, including scheduled runs and troubleshooting, is in the [setup guide](docs/setup-guide.md).
 
 ## Usage
 

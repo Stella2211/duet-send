@@ -2,9 +2,17 @@ English | [日本語](setup-guide.ja.md)
 
 # duet-send setup guide
 
-This guide installs duet-send on macOS or Windows. It is written so that a person can follow it, and so that Claude Code can follow it on the user's behalf.
+This guide installs duet-send on macOS, Linux or Windows. It is written so that a person can follow it, and so that Claude Code can follow it on the user's behalf.
 
 > **For Claude Code:** work through the steps in order and run the check at the end of each step. Install software only with the official commands shown here. Don't write to the user's shell profile or environment variables, don't send a real message (step 7), and don't edit Claude Code's settings files (optional step 9), until the user says yes. duet-send shortens session ids in its output; don't run it with `--verbose`, and don't print, copy or store a full session id anywhere.
+>
+> Some steps can't be done from Claude Code, because they wait for a person. Tell the user up front that these are theirs, and stop and hand them over when you reach one:
+>
+> - anything that asks for a password or a confirmation in the terminal: `sudo`, and `yay` or other AUR helpers (they ask to review and confirm the build)
+> - signing in through a browser: `claude auth login` (step 3), `gcloud auth login` and `gws auth setup` / `gws auth login` (step 4)
+> - the Google Cloud Console pages in step 4: the consent screen, test users and the OAuth client
+>
+> The user can run a short command that needs no input in this session by typing it after `!` at the prompt. Commands that wait for input (a password, a prompt, a browser sign-in) are best run in a separate terminal window; then the user tells you when they are done, and you run the step's check.
 
 ## How it fits together
 
@@ -27,6 +35,19 @@ The coordinator writes its own session id into the Drive file's **description** 
 - You need a Claude plan with Claude Code and cloud sessions (Pro, Max, Team, or Enterprise with the right seat). Sending with `--cloud` requires signing in with your Claude account; it doesn't work with an API key alone or with Amazon Bedrock, Google Vertex AI or other third-party providers.
 - After installing anything in the steps below, **open a new terminal** before running the next command, so the new program is found.
 
+To see what is already installed, run these one at a time (one that is missing prints "command not found"; that's fine):
+
+```sh
+git --version
+bun --version
+claude --version
+claude auth status
+gws --version
+gcloud --version
+```
+
+`claude auth status` shows whether Claude Code is signed in. `gcloud` is only needed for the automatic setup in step 4. Skip the steps for what you already have, but still run each step's check.
+
 ## 1. Install git (or download a ZIP)
 
 Check whether git is there:
@@ -38,13 +59,14 @@ git --version
 If it isn't:
 
 - macOS: run `xcode-select --install` and follow the dialog.
+- Linux: use your distribution's package manager, for example `sudo pacman -S git` (Arch) or `sudo apt install git` (Debian, Ubuntu).
 - Windows (PowerShell): `winget install --id Git.Git -e`, or download it from [git-scm.com](https://git-scm.com/downloads/win).
 
 If you'd rather not install git, skip it: in step 5 you can download a ZIP instead.
 
 ## 2. Install Bun
 
-macOS:
+macOS and Linux:
 
 ```sh
 curl -fsSL https://bun.com/install | bash
@@ -66,7 +88,7 @@ bun --version
 
 Skip the install if `claude --version` already works, but on Windows read the note below.
 
-macOS:
+macOS and Linux:
 
 ```sh
 curl -fsSL https://claude.ai/install.sh | bash
@@ -103,25 +125,72 @@ duet-send reads the id file's description with `gws`, so it always gets the id t
 Install it one of these ways:
 
 ```sh
-brew install googleworkspace-cli                # macOS with Homebrew
+brew install googleworkspace-cli                # macOS (or Linux) with Homebrew
 winget install --id Google.WorkspaceCLI -e      # Windows
-npm install -g @googleworkspace/cli             # either; needs Node.js 18 or later
+npm install -g @googleworkspace/cli             # any OS, including Linux; needs Node.js 18 or later
 ```
 
-Then sign in:
+On Linux without Homebrew, use the npm line (on some systems `npm install -g` needs `sudo`). You can also download a prebuilt binary from the [gws releases page](https://github.com/googleworkspace/cli/releases) and put `gws` on your PATH.
+
+### Sign in to Google
+
+`gws` needs an OAuth client of its own, which lives in a Google Cloud project. Setting that up is the longest part of this guide; you only do it once. There are two ways:
+
+- **A. Automatic, with the gcloud CLI.** `gws auth setup` creates or picks the project, turns on the APIs and signs you in. It needs `gcloud` installed and signed in. The OAuth client itself still has to be created by hand in the Cloud Console; setup tells you when (B2 and B3 below).
+- **B. By hand, in the Cloud Console.** No `gcloud` needed.
+
+Use a **new project just for gws** rather than one you use for other things: the steps change its OAuth consent screen and the APIs it has turned on.
+
+#### A. With gcloud
+
+1. **Install gcloud.**
+   - macOS, Windows, Debian / Ubuntu (Google's apt repository), Red Hat / Fedora, and other Linux (a tar.gz archive): follow Google's [Install the Google Cloud CLI](https://cloud.google.com/sdk/docs/install) page.
+   - Arch Linux: the `google-cloud-cli` package in the AUR, for example `yay -S google-cloud-cli`. The AUR is community-maintained, not Google's.
+
+   Open a new terminal and check with `gcloud --version`.
+2. **Sign in to gcloud** (opens a browser):
+
+   ```sh
+   gcloud auth login
+   ```
+
+3. **Pick the project.** To make a new one, use the [Cloud Console](https://console.cloud.google.com/projectcreate) or `gcloud projects create <PROJECT_ID>`. Project ids are global, so pick one nobody else has, for example `duet-send-gws-` and a few random letters. Then run setup with it:
+
+   ```sh
+   gws auth setup --project <PROJECT_ID>
+   ```
+
+   Without `--project`, setup uses gcloud's current project and stops with "No GCP project configured" if there is none (`gcloud config set project <PROJECT_ID>` sets one).
+4. **When setup says "Manual OAuth client setup required"** (or "OAuth client creation requires manual setup"), do B2 and B3 below in that project. Setup may already have created the consent screen; check that it is External and that you are a test user. Setup then asks for the client ID and client secret; paste them in. If setup stopped instead of asking, save the client JSON as in B3 and go on to `gws auth login`.
+
+#### B. By hand, in the Cloud Console
+
+Replace `<PROJECT_ID>` in the links with your project's id (create the project first at the [Cloud Console](https://console.cloud.google.com/projectcreate) if you don't have one).
+
+1. **Turn on the Google Drive API** for the project: open `https://console.cloud.google.com/apis/library/drive.googleapis.com?project=<PROJECT_ID>` and click **Enable** (if it says **Manage**, it's already on).
+2. **Set up the OAuth consent screen**: open `https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>`.
+   - User type (audience): **External**. Leaving it in testing mode is fine.
+   - App name: anything, for example `gws CLI`. Support email: your own address.
+   - Under **Test users**, click **Add users** and add your own Google account. Without this, sign-in fails with "Access blocked".
+3. **Create the OAuth client**: open `https://console.cloud.google.com/apis/credentials?project=<PROJECT_ID>`, then **Create credentials → OAuth client ID**.
+   - Application type: **Desktop app** (another type gives `redirect_uri_mismatch` later). You don't need to enter a redirect URI.
+   - In the dialog that follows, download the JSON and save it as `~/.config/gws/client_secret.json` (Windows: `%USERPROFILE%\.config\gws\client_secret.json`). Create the folder if it doesn't exist. This file is a credential: don't commit it or paste it anywhere.
+
+#### Then sign in
 
 ```sh
-gws auth setup          # first time only; uses the gcloud CLI, or set up OAuth in the Cloud Console by hand
 gws auth login -s drive
 ```
 
-Note that the `drive` scope can read and write all of your Drive.
+It opens a browser. If Google says "Google hasn't verified this app", that's your own testing-mode app: click **Continue**. Note that the `drive` scope can read and write all of your Drive.
+
+If a later `gws` command fails with `accessNotConfigured` ("Google Drive API has not been used in project ..."), the Drive API is off in that project. Turn it on with the link `gws` prints (or B1 above), wait a few seconds and try again. With gcloud you can also check it with `gcloud services list --enabled --project <PROJECT_ID>` and look for `drive.googleapis.com`.
 
 That's all duet-send needs. It searches the root of **your own** My Drive for `duet-coordinator-session-id.txt` and reads its description. If the description is empty, it downloads the file's content instead. Files in subfolders, and files other people shared with you, are ignored. If you set `DUET_DRIVE_FILE_ID` (step 6), it skips the search and reads that file directly.
 
 The easiest check is the dry run in step 7, which runs exactly the same search. To run the search by hand, use the command for your shell (all three send the same query as duet-send):
 
-macOS (zsh or bash):
+macOS or Linux (zsh or bash):
 
 ```sh
 gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and 'root' in parents and 'me' in owners and trashed = false\",\"fields\":\"files(id,description)\"}"
@@ -170,7 +239,7 @@ bun run check
 | `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` isn't on PATH, or you run duet-send on a schedule (step 8) |
 | `DUET_SESSION_ID` | Last resort: the id itself (it goes stale when the coordinator changes) |
 
-macOS (zsh): add lines like this to `~/.zshrc`, then open a new terminal.
+macOS (zsh): add lines like this to `~/.zshrc`, then open a new terminal. On Linux, use your shell's file instead (usually `~/.bashrc`).
 
 ```sh
 export DUET_DISCORD_WEBHOOK="https://discord.com/api/webhooks/..."
@@ -183,6 +252,8 @@ Windows: run this in PowerShell, then open a new terminal.
 ```
 
 ## 7. Check it works
+
+The dry run below only checks that duet-send can **read** an id. It can't tell whether that id is still current: if the coordinator has been replaced and the description still holds the old id, the dry run passes and the real send fails with "archived" or "Session not found". When that happens, open Duet and say anything to the coordinator. It checks its own id when it starts and rewrites the description; then send again.
 
 First a dry run. It finds the session id and `claude`, and prints what it would send, but sends nothing:
 
@@ -212,6 +283,10 @@ bun run duet "duet-send test. Please reply in the chat if this arrived."
 
 `duet: sent to session_…` means Claude Code queued the message. Check your Duet chat for the coordinator's reply. Add `--verbose` only if you need the full session id or Claude Code's own output.
 
+If it fails with "archived" or "Session not found", the id was stale (see the start of this step): talk to the coordinator in Duet, wait for it to update the description, and send again.
+
+If you already set up the Stop hook (step 9) and run this test from Claude Code, the coordinator gets a second message, `[Claude Code: Stop]`, when that Claude Code turn ends. Putting `DUET_HOOK=1` in front of the test command doesn't stop it, because Claude Code starts the hook, not your command. To avoid it, start that Claude Code session with `DUET_HOOK=1 claude` (see step 9).
+
 ## 8. Use it from your scripts and scheduled jobs
 
 Call the script by its full path, with a tag that says who is sending:
@@ -231,12 +306,12 @@ If the message may start with `-`, put `--` before it: `bun run duet -- "-5 test
 
 **Scheduled runs (cron, launchd, Task Scheduler, a bot service).** These don't read `~/.zshrc` or your user PATH. Use full paths everywhere, and set the variables in the job itself:
 
-- the full path to `bun`: check it with `which bun` (macOS) or `(Get-Command bun).Source` (PowerShell). It depends on how you installed Bun; the official installer uses `~/.bun/bin/bun` and `%USERPROFILE%\.bun\bin\bun.exe`
+- the full path to `bun`: check it with `which bun` (macOS, Linux) or `(Get-Command bun).Source` (PowerShell). It depends on how you installed Bun; the official installer uses `~/.bun/bin/bun` and `%USERPROFILE%\.bun\bin\bun.exe`
 - `DUET_CLAUDE_BIN` set to the full path of `claude` (or `claude.exe`)
 - `DUET_GWS_BIN` set to the full path of `gws`
 - any other variables you use, such as `DUET_DISCORD_WEBHOOK`
 
-Example crontab line on macOS (replace `you` and the paths with yours):
+Example crontab line on macOS (replace `you` and the paths with yours; on Linux, home folders are under `/home/you`):
 
 ```sh
 0 9 * * * DUET_CLAUDE_BIN=/Users/you/.local/bin/claude /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --tag "[cron]" "Good morning" >> /tmp/duet-send.log 2>&1
@@ -272,12 +347,12 @@ So it is a reliable "a turn ended" signal while Claude Code is running normally,
 
 Use your **user settings**, so it works in every project on this computer:
 
-- macOS: `~/.claude/settings.json`
+- macOS and Linux: `~/.claude/settings.json`
 - Windows: `%USERPROFILE%\.claude\settings.json`
 
 To use it in one project only, put the same block in that project's `.claude/settings.local.json` instead. Don't put it in a project's shared `.claude/settings.json`: the paths only exist on your computer, and that file is committed and read by everyone who opens the project.
 
-If the file already exists, add the `"hooks"` part to it instead of replacing the file. If it already has a `"hooks"` section, add the `"Stop"` entry inside it.
+If the file already exists, add the `"hooks"` part to it instead of replacing the file. If it already has a `"hooks"` section, add the `"Stop"` entry inside it. If it already has a `"Stop"` list, add duet-send's entry to that list; don't replace the entries already there. Editing by hand is easy to get wrong, so on macOS and Linux you can let `jq` do it (see "Add it with jq" below).
 
 `hooks/hooks.json` is the format for hooks bundled in a Claude Code [plugin](https://code.claude.com/docs/en/plugins/overview). For your own computer, `settings.json` is simpler; a plugin's `hooks/hooks.json` uses the same `{"hooks": {...}}` block, with an optional `"description"` beside it.
 
@@ -285,7 +360,7 @@ If the file already exists, add the `"hooks"` part to it instead of replacing th
 
 The hook needs the full path to `bun` and the full path to `send.ts`. Look them up on your computer instead of copying the examples below: where `bun` lives depends on how you installed it. The official installer puts it in `~/.bun/bin/`, but Homebrew, npm and version managers put it somewhere else.
 
-macOS (run the second line in the duet-send folder):
+macOS and Linux (run the second line in the duet-send folder):
 
 ```sh
 which bun
@@ -305,7 +380,7 @@ Write the full paths exactly as printed. The hook starts `bun` without a shell, 
 
 ### The entry
 
-macOS (put your two paths in place of the examples):
+macOS and Linux (put your two paths in place of the examples):
 
 ```json
 {
@@ -347,6 +422,21 @@ Windows (in JSON, each `\` in a path is written `\\`):
 }
 ```
 
+### Add it with jq (macOS, Linux)
+
+If `~/.claude/settings.json` already exists, this keeps a backup and appends the entry to `hooks.Stop`, leaving everything else as it was (including other Stop hooks). Put your two paths in the first two lines:
+
+```sh
+BUN=/Users/you/.bun/bin/bun
+SEND=/Users/you/duet-send/send.ts
+cp ~/.claude/settings.json ~/.claude/settings.json.bak && \
+jq --arg bun "$BUN" --arg send "$SEND" \
+  '.hooks.Stop += [{"hooks": [{"type": "command", "command": $bun, "args": [$send, "--hook"], "async": true}]}]' \
+  ~/.claude/settings.json.bak > ~/.claude/settings.json
+```
+
+Run it once only: each run adds another entry. If something goes wrong, `cp ~/.claude/settings.json.bak ~/.claude/settings.json` puts the old file back. If the file doesn't exist yet, create it with the full block above instead.
+
 About these settings:
 
 - `"command"` with `"args"` makes Claude Code start `bun` directly, without a shell, so paths with spaces need no quoting. On Windows this needs a real `.exe`, which `bun.exe` is.
@@ -374,7 +464,7 @@ The hook runs with Claude Code's environment, so the variables from step 6 apply
 
 1. Run the hook by hand, with exactly the two paths you wrote in `"command"` and `"args"`, and a sample of what Claude Code sends. This checks those paths and sends nothing.
 
-   macOS:
+   macOS and Linux:
 
    ```sh
    echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --hook --dry-run
