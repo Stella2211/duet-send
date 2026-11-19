@@ -504,6 +504,12 @@ The coordinator hasn't written its id yet. Ask it to write its current session i
 **`gws could not search Drive ...`, `gws could not read Drive file ...` or `gws could not download the file ...` with `invalid_grant`, `error[auth]` or `401`**
 Your `gws` sign-in has expired or was revoked. Run `gws auth login -s drive` again, then retry.
 
+**`the macOS login keychain is locked, so gws was not run`**
+`gws` keeps the key for its sign-in in your login keychain, and when it can't read that keychain it deletes its saved sign-in. So duet-send doesn't call it while the keychain is locked. Log in to the Mac (or unlock the screen), or run `security unlock-keychain` in that session, then retry. Over SSH or in a background job, set `DUET_SESSION_ID` instead; duet-send then uses it without calling `gws`.
+
+**`Request had insufficient authentication scopes` right after `gws auth login`**
+`gws` lost its sign-in at some point and used gcloud's Application Default Credentials, which have no Drive access. It also cached that token. Run `gws auth status`: if `auth_method` is `none`, run `gws auth login -s drive`. If it is `oauth2` with a Drive scope, delete `~/.config/gws/token_cache.json` (only a cache; it is recreated) and retry.
+
 **`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
 The file is missing, in a subfolder, or owned by another account. Ask the coordinator to create it in the root of your My Drive, or set `DUET_DRIVE_FILE_ID`.
 
