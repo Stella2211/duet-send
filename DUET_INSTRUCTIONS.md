@@ -44,7 +44,7 @@ Write these to your project memory, near the top so every new coordinator sessio
 - That duet-send is set up for this user, with a link to this repository
 - Your current session id (as of today's date)
 - The Drive file id of `duet-coordinator-session-id.txt`
-- The instruction from "On every session start" below
+- The instruction from "On every session start" below, marked to be done first in every new session
 
 These are records, not permissions: writing to Drive still needs the user's yes each time unless your own rules allow otherwise.
 
@@ -52,25 +52,34 @@ These are records, not permissions: writing to Drive still needs the user's yes 
 
 Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install. duet-send needs `gws` on their computer, because only the Drive API can read a file's description.
 
-### 5. Offer the hourly check (ask; create only on yes)
+### 5. Offer the hourly wake signal (ask; create only on yes)
 
-When you are replaced, the new coordinator only notices on its first turn, and duet-send keeps sending to the old, archived id until then. A small routine can catch that. Ask the user in one line whether they want it, for example: "Should I set up an hourly check that wakes me if my session id changes, so the Drive file gets updated within about an hour?"
+When you are replaced, the new coordinator only notices on its first turn, and duet-send keeps sending to the old, archived id until then. A small routine can shorten that gap by waking you once an hour. Ask the user in one line whether they want it, for example: "Should I set up an hourly signal that wakes me to check my session id, so the Drive file gets updated within about an hour of a change?"
 
-Only on their yes, create a routine in this chat that runs once an hour and does this:
+**The routine must not check the id itself.** A scheduled routine run has neither `get_session` nor `get_channel_session_id`: they are not in its tools, and a tool search doesn't find them. A routine that is told to call `get_session` and "post nothing otherwise" therefore fails silently, and the id goes stale without anyone noticing. So the routine only posts a fixed line, and the check runs in your own coordinator session, which does have `get_session`.
 
-> Read the recorded coordinator session id for duet-send from project memory. Call `get_session` from the claude-code-remote tools with that id. If the session is missing or archived, post one short line in this chat saying the duet-send session id needs checking, so that the current coordinator wakes up and runs its session-start check. Otherwise post nothing.
+Only on their yes, create a routine in this chat that runs once an hour (for example at a few minutes past each hour), with this prompt:
 
-The routine reads the id from memory each run, so you don't need to update the routine when the id changes. Tell the user how often it runs, and that it runs until they ask you to stop it.
+> Post exactly this one line in this chat, and nothing else: 定時のセッションID確認の合図です。
+> Don't call any tools, don't check anything, and don't add any other text.
+
+Any fixed line works; the Japanese one above means "This is the scheduled signal for the session-id check." Use the user's language if you like, but keep it identical on every run, so you can recognize it.
+
+Then add to your project memory, next to the duet-send entry: the exact wake line, and that when it arrives you run the check in "On every session start" below. Routine posts aren't shown to the user, so this signal costs them nothing. Tell the user how often it runs, and that it runs until they ask you to stop it.
+
+If the user set up the older routine that called `get_session` itself, offer to replace its prompt with the one above (ask first; it's their routine).
 
 ## On every session start
 
-Each time you start as a new coordinator session (and whenever the hourly check wakes you):
+Do this as the **first thing** each time you start as a new coordinator session, and each time the hourly wake line arrives:
 
 1. Call `get_session` with no `session_id` and compare the id with the one in memory.
 2. If it is the same, do nothing and say nothing about it.
-3. If it differs, update the id in memory right away. Then ask the user in one line before rewriting the Drive file's description, for example: "My session id changed; should I update the description of duet-coordinator-session-id.txt in your Drive so duet-send can reach me?" On their yes, call the Google Drive connector's update tool on **the same Drive file** (by its recorded Drive file id) with `description` set to the new id alone. Leave the content as it is. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
+3. If it differs, update the id in memory right away (and in any other place you keep it, such as a notes file in your project folder). Then rewrite the Drive file's description: call the Google Drive connector's update tool on **the same Drive file** (by its recorded Drive file id) with `description` set to the new id alone. Leave the content as it is. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
 
-When the hourly check's post wakes you, run this check and don't relay the post itself to the user.
+Ask the user in one line before that Drive update, for example: "My session id changed; should I update the description of duet-coordinator-session-id.txt in your Drive so duet-send can reach me?", unless they have told you that you may update it without asking. Record such a permission in memory in their own words, so the next coordinator session knows it too.
+
+When the hourly wake line arrives, run this check and don't relay the line to the user. If the id is unchanged, end your turn without replying. If `get_session` fails, tell the user in one line that you couldn't check your session id, instead of staying silent.
 
 ## How messages from duet-send arrive
 
@@ -86,6 +95,7 @@ Messages sent with duet-send arrive as ordinary user turns with **no sender info
 
 - **`get_session` isn't in your tools:** search for it in your deferred tools. If it isn't available, tell the user you can't read your session id here, and that duet-send can still be used with `DUET_SESSION_ID` set by hand, although it goes stale when the coordinator changes.
 - **The user says duet-send reports "archived" or "Session not found":** run the session-start check above.
+- **The id went stale even though the hourly routine exists:** read the routine's prompt. If it tells the routine to call `get_session` (the older design), it has been failing silently, because routine runs don't have that tool. Offer to replace it with the wake-line prompt in step 5.
 - **The user reports "does not contain a session id":** the description (or, if the description is empty, the content) has something other than an id. Ask, then set the description to your current id alone.
 - **The user reports "both the description and the content ... are empty":** set the description to your current id (ask first).
 - **The user's dry run says `read from: ... (file content)`:** the description is empty, so duet-send fell back to the content. Set the description to your current id (ask first).

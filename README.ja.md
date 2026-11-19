@@ -10,7 +10,7 @@ Claude Duet のコーディネーターは、クラウド上の Claude Code セ�
 - duet-send はその説明欄を読んで、正しいセッションにメッセージを送ります。
 - 送信に失敗したとき（IDが古くなったときなど）は、Discord に知らせることもできます。
 
-ビルドスクリプト、Discord ボット、定期実行のジョブ、手元の Claude Code などから、Duet のコーディネーターに仕事を渡すのに使えます。**macOS と Windows** の両方で動きます。
+ビルドスクリプト、Discord ボット、定期実行のジョブ、手元の Claude Code などから、Duet のコーディネーターに仕事を渡すのに使えます。**macOS、Linux、Windows** で動きます。
 
 ```sh
 bun run duet "夜間ビルドが終わりました。テストが3件落ちているので見てください。"
@@ -20,7 +20,7 @@ bun run duet "夜間ビルドが終わりました。テストが3件落ちて�
 
 このリポジトリのリンクをAIに渡して、次の順で導入を頼んでください。
 
-1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿ってIDのファイルを作ります。Google ドライブに書く前と、IDがまだ有効かを1時間ごとに確かめる仕組みを作る前に、あなたに確認します。
+1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿ってIDのファイルを作ります。Google ドライブに書く前と、1時間ごとに自分のIDを確かめ直すための合図（定期実行）を作る前に、あなたに確認します。
 2. **手元のパソコンの Claude Code で**：「https://github.com/Stella2211/duet-send の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。足りないものを入れ、このリポジトリを取ってきて、送信のリハーサル（dry run）まで行います。
 
 ## 手で導入する
@@ -43,7 +43,7 @@ bun run duet "テスト"             # 実際に送る
 
 git がない場合は、リポジトリのページで **Code → Download ZIP** を選び、展開したフォルダでターミナルを開いてください。
 
-macOS と Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。
+macOS、Linux、Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。
 
 ## 使い方
 

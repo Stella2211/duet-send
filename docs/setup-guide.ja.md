@@ -2,9 +2,17 @@
 
 # duet-send 導入ガイド
 
-macOS または Windows に duet-send を入れる手順です。人が読みながら進めても、Claude Code がユーザーの代わりに進めても良いように書いています。
+macOS、Linux、Windows に duet-send を入れる手順です。人が読みながら進めても、Claude Code がユーザーの代わりに進めても良いように書いています。
 
 > **Claude Code へ：** 手順を順番に進め、各手順の最後にある確認を実行してください。ソフトウェアはここに書いた公式のコマンドだけで入れてください。シェルの設定ファイルや環境変数への書き込み、実際のメッセージの送信（手順7）、Claude Code の設定ファイルの編集（任意の手順9）は、ユーザーの了承を得てから行ってください。duet-send は出力の中のセッションIDを短くして表示します。`--verbose` を付けて実行せず、セッションIDの全体を表示・コピー・保存しないでください。
+>
+> 次の操作は人の入力を待つので、Claude Code からは進められません。最初にユーザーの担当だと伝え、そこまで来たら止まって引き渡してください。
+>
+> - ターミナルでパスワードや確認を求めるもの：`sudo`、`yay` などの AUR ヘルパー（ビルド内容の確認を求めます）
+> - ブラウザでのサインイン：`claude auth login`（手順3）、`gcloud auth login` と `gws auth setup` / `gws auth login`（手順4）
+> - 手順4の Google Cloud Console での作業：同意画面、テストユーザー、OAuth クライアント
+>
+> 入力のいらない短いコマンドは、ユーザーがこのセッションのプロンプトで先頭に `!` を付けて打てば実行できます。入力を待つもの（パスワード、確認、ブラウザでのサインイン）は、別のターミナルで実行してもらうのが確実です。終わったと言われたら、その手順の確認を実行してください。
 
 ## 全体の仕組み
 
@@ -27,6 +35,19 @@ macOS または Windows に duet-send を入れる手順です。人が読みな
 - Claude Code とクラウドセッションが使えるプランが必要です（Pro、Max、Team、または対応する席の Enterprise）。`--cloud` での送信には Claude アカウントでのサインインが必要で、APIキーだけの場合や、Amazon Bedrock・Google Vertex AI などの外部プロバイダー経由では使えません。
 - 以下の手順で何かを入れたら、次のコマンドを実行する前に **新しいターミナルを開いて** ください。そうしないと、入れたばかりのプログラムが見つからないことがあります。
 
+すでに入っているものを確かめるには、次を1行ずつ実行します（入っていないものは「command not found」になりますが、それで構いません）。
+
+```sh
+git --version
+bun --version
+claude --version
+claude auth status
+gws --version
+gcloud --version
+```
+
+`claude auth status` は Claude Code にサインイン済みかを表示します。`gcloud` は手順4の自動設定を使うときだけ必要です。入っているものの手順は飛ばして構いませんが、各手順の確認は実行してください。
+
 ## 1. git を入れる（または ZIP でダウンロードする）
 
 git があるか確認します。
@@ -38,13 +59,14 @@ git --version
 ない場合：
 
 - macOS：`xcode-select --install` を実行し、表示される画面に従います。
+- Linux：ディストリビューションのパッケージマネージャーで入れます。たとえば `sudo pacman -S git`（Arch）、`sudo apt install git`（Debian、Ubuntu）。
 - Windows（PowerShell）：`winget install --id Git.Git -e` を実行するか、[git-scm.com](https://git-scm.com/downloads/win) からダウンロードします。
 
 git を入れたくなければ、この手順は飛ばして構いません。手順5で ZIP をダウンロードできます。
 
 ## 2. Bun を入れる
 
-macOS：
+macOS と Linux：
 
 ```sh
 curl -fsSL https://bun.com/install | bash
@@ -66,7 +88,7 @@ bun --version
 
 `claude --version` がすでに動くなら入れ直しは不要です。ただし Windows の方は下の注意を読んでください。
 
-macOS：
+macOS と Linux：
 
 ```sh
 curl -fsSL https://claude.ai/install.sh | bash
@@ -103,25 +125,72 @@ duet-send は `gws` でIDファイルの説明欄を読むので、コーディ�
 次のどれかの方法で入れます。
 
 ```sh
-brew install googleworkspace-cli                # macOS（Homebrew）
+brew install googleworkspace-cli                # macOS（Linux でも可）。Homebrew
 winget install --id Google.WorkspaceCLI -e      # Windows
-npm install -g @googleworkspace/cli             # どちらでも可。Node.js 18 以降が必要
+npm install -g @googleworkspace/cli             # どのOSでも可（Linux を含む）。Node.js 18 以降が必要
 ```
 
-続けてサインインします。
+Homebrew のない Linux では npm の行を使います（環境によっては `npm install -g` に `sudo` が必要です）。[gws のリリースページ](https://github.com/googleworkspace/cli/releases) からビルド済みのバイナリを落として、`gws` を PATH の通った場所に置く方法もあります。
+
+### Google にサインインする
+
+`gws` には専用の OAuth クライアントが必要で、それは Google Cloud のプロジェクトの中に作ります。このガイドでいちばん手間のかかる所ですが、一度だけです。方法は2つあります。
+
+- **A. gcloud CLI で自動設定する。** `gws auth setup` がプロジェクトを作るか選び、API を有効にし、サインインまで進めます。`gcloud` が入っていて、サインイン済みである必要があります。ただし OAuth クライアントそのものは、Cloud Console で手で作る必要があります。必要になったところで setup が案内します（下の B2 と B3）。
+- **B. Cloud Console で手で設定する。** `gcloud` はいりません。
+
+プロジェクトは、ほかの用途に使っているものではなく、**gws 専用に新しく作る** のをおすすめします。以下の手順で、そのプロジェクトの OAuth 同意画面や有効な API を変えるためです。
+
+#### A. gcloud を使う
+
+1. **gcloud を入れる。**
+   - macOS、Windows、Debian / Ubuntu（Google の apt リポジトリ）、Red Hat / Fedora、その他の Linux（tar.gz）：Google の [Google Cloud CLI をインストールする](https://cloud.google.com/sdk/docs/install) ページの手順に従います。
+   - Arch Linux：AUR の `google-cloud-cli` パッケージです。たとえば `yay -S google-cloud-cli`。AUR はコミュニティが管理していて、Google のものではありません。
+
+   新しいターミナルを開いて、`gcloud --version` で確かめます。
+2. **gcloud にサインインする**（ブラウザが開きます）。
+
+   ```sh
+   gcloud auth login
+   ```
+
+3. **プロジェクトを決める。** 新しく作るときは、[Cloud Console](https://console.cloud.google.com/projectcreate) か `gcloud projects create <PROJECT_ID>` で作ります。プロジェクトIDは世界中で一意なので、`duet-send-gws-` のあとにランダムな英字を足すなど、他人と重ならないものにします。そのIDを指定して設定を始めます。
+
+   ```sh
+   gws auth setup --project <PROJECT_ID>
+   ```
+
+   `--project` を付けないと gcloud の現在のプロジェクトを使い、それもないときは「No GCP project configured」で止まります（`gcloud config set project <PROJECT_ID>` で設定できます）。
+4. **「Manual OAuth client setup required」（または「OAuth client creation requires manual setup」）と出たら**、そのプロジェクトで下の B2 と B3 を行います。同意画面は setup がすでに作っていることがあるので、種類が外部になっているか、自分がテストユーザーに入っているかを確かめてください。続けてクライアントIDとクライアントシークレットを聞かれるので、貼り付けます。聞かれずに止まったときは、B3 のとおり JSON を保存してから `gws auth login` に進みます。
+
+#### B. Cloud Console で手で設定する
+
+リンクの `<PROJECT_ID>` は自分のプロジェクトIDに置き換えます（プロジェクトがなければ、先に [Cloud Console](https://console.cloud.google.com/projectcreate) で作ります）。
+
+1. **Google Drive API を有効にする**：`https://console.cloud.google.com/apis/library/drive.googleapis.com?project=<PROJECT_ID>` を開いて **有効にする** を押します（**管理** と出ていれば有効になっています）。
+2. **OAuth 同意画面を設定する**：`https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>` を開きます。
+   - ユーザーの種類（対象）：**外部**。テストモードのままで構いません。
+   - アプリ名は何でも構いません（たとえば `gws CLI`）。サポートメールは自分のアドレスにします。
+   - **テストユーザー** で **ユーザーを追加** を押し、自分の Google アカウントを足します。これを忘れると、サインインが「アクセスをブロック」で失敗します。
+3. **OAuth クライアントを作る**：`https://console.cloud.google.com/apis/credentials?project=<PROJECT_ID>` を開き、**認証情報を作成 → OAuth クライアント ID** を選びます。
+   - アプリケーションの種類：**デスクトップ アプリ**（ほかの種類だと、あとで `redirect_uri_mismatch` になります）。リダイレクトURIを入れる必要はありません。
+   - 作成後に出る画面で JSON をダウンロードし、`~/.config/gws/client_secret.json`（Windows では `%USERPROFILE%\.config\gws\client_secret.json`）として保存します。フォルダがなければ作ります。このファイルは認証情報なので、コミットしたりどこかに貼ったりしないでください。
+
+#### 最後にサインインする
 
 ```sh
-gws auth setup          # 初回のみ。gcloud CLI を使うか、Cloud Console で OAuth を手動設定
 gws auth login -s drive
 ```
 
-`drive` スコープはドライブ全体を読み書きできる権限なので注意してください。
+ブラウザが開きます。「このアプリは Google で確認されていません」と出たら、それは自分で作ったテストモードのアプリなので **続行** を押します。`drive` スコープはドライブ全体を読み書きできる権限なので注意してください。
+
+あとで `gws` のコマンドが `accessNotConfigured`（「Google Drive API has not been used in project ...」）で失敗したら、そのプロジェクトで Drive API が無効です。`gws` が表示するリンク（または上の B1）から有効にし、数秒待ってからやり直します。gcloud があれば、`gcloud services list --enabled --project <PROJECT_ID>` に `drive.googleapis.com` があるかでも確かめられます。
 
 設定はこれだけです。duet-send は **自分の** マイドライブ直下から `duet-coordinator-session-id.txt` を探して、その説明欄を読みます。説明欄が空のときは、代わりにファイルの本文をダウンロードします。サブフォルダにあるファイルや、他人から共有されたファイルは無視します。`DUET_DRIVE_FILE_ID`（手順6）を設定すると、検索を省いてそのファイルを直接読みます。
 
 いちばん簡単な確認は、手順7の dry run です。duet-send とまったく同じ検索をします。手で検索してみたいときは、使っているシェルに合わせて次のどれかを実行します（3つとも duet-send と同じ条件で検索します）。
 
-macOS（zsh / bash）：
+macOS / Linux（zsh / bash）：
 
 ```sh
 gws drive files list --params "{\"q\":\"name = 'duet-coordinator-session-id.txt' and 'root' in parents and 'me' in owners and trashed = false\",\"fields\":\"files(id,description)\"}"
@@ -170,7 +239,7 @@ bun run check
 | `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` が PATH にないとき、または定期実行するとき（手順8） |
 | `DUET_SESSION_ID` | 最後の手段。IDそのもの（コーディネーターが変わると古くなります） |
 
-macOS（zsh）：`~/.zshrc` に次のような行を足して、新しいターミナルを開きます。
+macOS（zsh）：`~/.zshrc` に次のような行を足して、新しいターミナルを開きます。Linux では、使っているシェルのファイル（たいていは `~/.bashrc`）に足します。
 
 ```sh
 export DUET_DISCORD_WEBHOOK="https://discord.com/api/webhooks/..."
@@ -183,6 +252,8 @@ Windows：PowerShell で次を実行して、新しいターミナルを開き�
 ```
 
 ## 7. 動作を確認する
+
+下の dry run で確かめられるのは、duet-send がIDを **読めるか** までです。そのIDがまだ有効かは分かりません。コーディネーターが入れ替わって説明欄が古いIDのままだと、dry run は成功し、実際の送信が「archived」や「Session not found」で失敗します。そのときは Duet を開いてコーディネーターに何か話しかけてください。コーディネーターは起動時に自分のIDを確かめて説明欄を書き換えるので、そのあとでもう一度送ります。
 
 まずは送らずに試します。セッションIDと `claude` を探して、送る内容を表示するだけです。
 
@@ -212,6 +283,10 @@ bun run duet "duet-send のテストです。届いたらチャットで返事�
 
 `duet: sent to session_…` と出れば、Claude Code がメッセージを届けています。返事は Duet のチャットで確認してください。セッションIDの全体や Claude Code 自身の出力が必要なときだけ、`--verbose` を付けてください。
 
+「archived」や「Session not found」で失敗したときは、IDが古くなっています（この手順の最初を参照）。Duet でコーディネーターに話しかけ、説明欄が書き換わるのを待ってから、もう一度送ってください。
+
+Stop hook（手順9）をすでに設定していて、このテストを Claude Code から実行すると、その Claude Code のターンが終わったときに `[Claude Code: Stop]` のメッセージがもう1通届きます。テストのコマンドの前に `DUET_HOOK=1` を付けても止まりません。hook を起動するのはあなたのコマンドではなく Claude Code だからです。避けたいときは、その Claude Code を `DUET_HOOK=1 claude` で起動してください（手順9を参照）。
+
 ## 8. 自分のスクリプトや定期実行から使う
 
 スクリプトをフルパスで呼び、誰が送ったかわかるタグを付けます。
@@ -231,12 +306,12 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 
 **定期実行（cron、launchd、タスクスケジューラ、ボットのサービスなど）。** これらは `~/.zshrc` やユーザーの PATH を読みません。すべてフルパスで書き、変数はジョブの中で設定してください。
 
-- `bun` のフルパス。`which bun`（macOS）か `(Get-Command bun).Source`（PowerShell）で確かめます。場所は Bun の入れ方で変わり、公式のインストーラーなら `~/.bun/bin/bun`、`%USERPROFILE%\.bun\bin\bun.exe` です
+- `bun` のフルパス。`which bun`（macOS、Linux）か `(Get-Command bun).Source`（PowerShell）で確かめます。場所は Bun の入れ方で変わり、公式のインストーラーなら `~/.bun/bin/bun`、`%USERPROFILE%\.bun\bin\bun.exe` です
 - `DUET_CLAUDE_BIN` に `claude`（または `claude.exe`）のフルパス
 - `DUET_GWS_BIN` に `gws` のフルパス
 - `DUET_DISCORD_WEBHOOK` など、使っているほかの変数
 
-macOS の crontab の例（`you` やパスは自分のものに置き換えてください）：
+macOS の crontab の例（`you` やパスは自分のものに置き換えてください。Linux ではホームフォルダが `/home/you` の下になります）：
 
 ```sh
 0 9 * * * DUET_CLAUDE_BIN=/Users/you/.local/bin/claude /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --tag "[cron]" "おはようございます" >> /tmp/duet-send.log 2>&1
@@ -272,12 +347,12 @@ I've fixed the failing test and pushed the branch. ...
 
 **ユーザー設定** に書けば、このパソコンのすべてのプロジェクトで動きます。
 
-- macOS：`~/.claude/settings.json`
+- macOS と Linux：`~/.claude/settings.json`
 - Windows：`%USERPROFILE%\.claude\settings.json`
 
 特定のプロジェクトだけで使いたいときは、同じ内容をそのプロジェクトの `.claude/settings.local.json` に書きます。プロジェクトで共有する `.claude/settings.json` には書かないでください。パスはあなたのパソコンにしかなく、そのファイルはコミットされて、プロジェクトを開く全員に読まれます。
 
-ファイルがすでにあるときは、ファイルを置き換えずに `"hooks"` の部分を書き足してください。すでに `"hooks"` があるなら、その中に `"Stop"` を足します。
+ファイルがすでにあるときは、ファイルを置き換えずに `"hooks"` の部分を書き足してください。すでに `"hooks"` があるなら、その中に `"Stop"` を足します。すでに `"Stop"` のリストがあるなら、そこにある設定は消さずに、duet-send の設定をリストに追加します。手で書き足すと壊しやすいので、macOS と Linux では `jq` に任せることもできます（下の「jq で追加する」を参照）。
 
 `hooks/hooks.json` は、Claude Code の [プラグイン](https://code.claude.com/docs/ja/plugins/overview) に hook を入れるときの形式です。自分のパソコンで使うだけなら `settings.json` のほうが簡単です。プラグインの `hooks/hooks.json` でも、同じ `{"hooks": {...}}` の部分をそのまま使えます（横に任意の `"description"` を置けます）。
 
@@ -285,7 +360,7 @@ I've fixed the failing test and pushed the branch. ...
 
 hook には、`bun` のフルパスと `send.ts` のフルパスが必要です。下の例をそのまま写さず、自分のパソコンで確かめてください。`bun` の場所は入れ方で変わります。公式のインストーラーなら `~/.bun/bin/` ですが、Homebrew、npm、バージョン管理ツールなどで入れた場合は別の場所になります。
 
-macOS（2行目は duet-send のフォルダで実行します）：
+macOS と Linux（2行目は duet-send のフォルダで実行します）：
 
 ```sh
 which bun
@@ -305,7 +380,7 @@ Windows の PowerShell（2行目は duet-send のフォルダで実行します�
 
 ### 書く内容
 
-macOS（例のパスを、確かめた2つのパスに置き換えます）：
+macOS と Linux（例のパスを、確かめた2つのパスに置き換えます）：
 
 ```json
 {
@@ -347,6 +422,21 @@ Windows（JSON の中では、パスの `\` を `\\` と書きます）：
 }
 ```
 
+### jq で追加する（macOS、Linux）
+
+`~/.claude/settings.json` がすでにあるとき、次のコマンドはバックアップを取ってから `hooks.Stop` に設定を1つ追加します。ほかの設定（ほかの Stop hook も含む）はそのまま残ります。最初の2行に、確かめた2つのパスを入れてください。
+
+```sh
+BUN=/Users/you/.bun/bin/bun
+SEND=/Users/you/duet-send/send.ts
+cp ~/.claude/settings.json ~/.claude/settings.json.bak && \
+jq --arg bun "$BUN" --arg send "$SEND" \
+  '.hooks.Stop += [{"hooks": [{"type": "command", "command": $bun, "args": [$send, "--hook"], "async": true}]}]' \
+  ~/.claude/settings.json.bak > ~/.claude/settings.json
+```
+
+実行は1回だけにしてください。実行するたびに設定が1つずつ増えます。うまくいかなかったときは、`cp ~/.claude/settings.json.bak ~/.claude/settings.json` で元に戻せます。ファイルがまだないときは、上の設定全体を書いて新しく作ってください。
+
 設定の意味：
 
 - `"command"` と `"args"` を分けて書くと、Claude Code はシェルを通さずに `bun` を直接起動します。パスに空白があっても引用符はいりません。Windows では本物の `.exe` が必要で、`bun.exe` はそれに当たります。
@@ -374,7 +464,7 @@ hook は Claude Code の環境変数を引き継ぐので、手順6の変数は�
 
 1. `"command"` と `"args"` に書いた2つのパスをそのまま使い、Claude Code が渡す内容のサンプルで hook を手で動かします。書いたパスが正しいかを確かめるもので、何も送りません。
 
-   macOS：
+   macOS と Linux：
 
    ```sh
    echo '{"hook_event_name":"Stop","cwd":"/tmp/test","last_assistant_message":"Test reply."}' | /Users/you/.bun/bin/bun /Users/you/duet-send/send.ts --hook --dry-run
@@ -424,7 +514,7 @@ hook は Claude Code の環境変数を引き継ぐので、手順6の変数は�
 説明欄（本文を読んだ場合はファイルの中身）は、`session_`（または `cse_`）で始まるIDだけでなければいけません。コーディネーターに書き直してもらってください。メッセージに「the description of Drive file」とあれば、説明欄に別のものが入っています。ドライブでファイルの詳細を開くと確認できます。
 
 **`cloud session session_… is archived and cannot accept new messages` または `Session not found`**
-コーディネーターが入れ替わったのに、ファイルが古いIDのままです。Duet を開いて何か話しかけてください。新しいコーディネーターは起動時に自分のIDを確認し、ファイルの説明欄を書き換えます。1時間ごとの確認を設定している場合は、1時間ほどで自動的に直ります。`DUET_SESSION_ID` を使っている場合は、その値を更新してください。
+コーディネーターが入れ替わったのに、ファイルが古いIDのままです。Duet を開いて何か話しかけてください。新しいコーディネーターは起動時に自分のIDを確認し、ファイルの説明欄を書き換えます。1時間ごとの合図を設定している場合は、1時間ほどで自動的に直ります。（直らないときは、定期実行のプロンプトを見直すようコーディネーターに頼んでください。以前の版は定期実行の中でIDを確かめる作りで、黙って失敗していました。）`DUET_SESSION_ID` を使っている場合は、その値を更新してください。
 
 **`Unable to get organization UUID`、または「Cloud sessions need a claude.ai sign-in」**
 `claude auth login` で Claude アカウントにサインインしてください。APIキーだけでは使えません。
