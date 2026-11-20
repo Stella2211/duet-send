@@ -5,6 +5,14 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Stella2211/duet-send.git"
+  },
+  "homepage": "https://github.com/Stella2211/duet-send#readme",
+  "bugs": {
+    "url": "https://github.com/Stella2211/duet-send/issues"
+  },
   "scripts": {
     "duet": "bun run send.ts",
     "check": "bun build send.ts --target=bun --outdir=dist"
