@@ -122,6 +122,8 @@ If the first line ends in `.cmd`, either install the native version as shown abo
 
 duet-send reads the id file's description with `gws`, so it always gets the id the coordinator wrote last. `gws` is an open-source tool from the googleworkspace GitHub organization; it says it is not an officially supported Google product, and it is still before v1.0.
 
+**If you already have `gws` and it can read your Drive, skip this step, and do not sign in again.** Check with `gws auth status`: `auth_method` should be `oauth2`, and the scopes should include `https://www.googleapis.com/auth/drive` or `https://www.googleapis.com/auth/drive.readonly`. Then the search command at the end of this step, or the dry run in step 7, should work. Signing in again with `gws auth login` replaces your current sign-in with the scopes you pick this time, so other tools that use `gws` may lose access to things beyond Drive, or lose write access.
+
 Install it one of these ways:
 
 ```sh
@@ -136,7 +138,7 @@ On Linux without Homebrew, use the npm line (on some systems `npm install -g` ne
 
 `gws` needs an OAuth client of its own, which lives in a Google Cloud project. Setting that up is the longest part of this guide; you only do it once. There are two ways:
 
-- **A. Automatic, with the gcloud CLI.** `gws auth setup` creates or picks the project, turns on the APIs and signs you in. It needs `gcloud` installed and signed in. The OAuth client itself still has to be created by hand in the Cloud Console; setup tells you when (B2 and B3 below).
+- **A. Automatic, with the gcloud CLI.** `gws auth setup` creates or picks the project, turns on the APIs and offers to sign you in (answer `n`; see A3 below). It needs `gcloud` installed and signed in. The OAuth client itself still has to be created by hand in the Cloud Console; setup tells you when (B2 and B3 below).
 - **B. By hand, in the Cloud Console.** No `gcloud` needed.
 
 Use a **new project just for gws** rather than one you use for other things: the steps change its OAuth consent screen and the APIs it has turned on.
@@ -160,6 +162,8 @@ Use a **new project just for gws** rather than one you use for other things: the
    gws auth setup --project <PROJECT_ID>
    ```
 
+   At the end, setup asks "Run `gws auth login` now? [Y/n]". Answer `n` and sign in with the command under "Then sign in" below. With `Y`, gws opens a scope picker with a much wider set (full Drive, Gmail, Calendar and more) already selected.
+
    Without `--project`, setup uses gcloud's current project and stops with "No GCP project configured" if there is none (`gcloud config set project <PROJECT_ID>` sets one).
 4. **When setup says "Manual OAuth client setup required"** (or "OAuth client creation requires manual setup"), do B2 and B3 below in that project. Setup may already have created the consent screen; check that it is External and that you are a test user. Setup then asks for the client ID and client secret; paste them in. If setup stopped instead of asking, save the client JSON as in B3 and go on to `gws auth login`.
 
@@ -169,7 +173,7 @@ Replace `<PROJECT_ID>` in the links with your project's id (create the project f
 
 1. **Turn on the Google Drive API** for the project: open `https://console.cloud.google.com/apis/library/drive.googleapis.com?project=<PROJECT_ID>` and click **Enable** (if it says **Manage**, it's already on).
 2. **Set up the OAuth consent screen**: open `https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>`.
-   - User type (audience): **External**. Leaving it in testing mode is fine.
+   - User type (audience): **External**. Testing mode works, but Google then makes the sign-in expire after 7 days, and `gws` fails with `invalid_grant` until you sign in again. To avoid that, click **Publish app** to move it to "In production". It stays unverified, which is fine for your own use.
    - App name: anything, for example `gws CLI`. Support email: your own address.
    - Under **Test users**, click **Add users** and add your own Google account. Without this, sign-in fails with "Access blocked".
 3. **Create the OAuth client**: open `https://console.cloud.google.com/apis/credentials?project=<PROJECT_ID>`, then **Create credentials → OAuth client ID**.
@@ -179,10 +183,10 @@ Replace `<PROJECT_ID>` in the links with your project's id (create the project f
 #### Then sign in
 
 ```sh
-gws auth login -s drive
+gws auth login --scopes https://www.googleapis.com/auth/drive.readonly
 ```
 
-It opens a browser. If Google says "Google hasn't verified this app", that's your own testing-mode app: click **Continue**. Note that the `drive` scope can read and write all of your Drive.
+duet-send only reads, so sign in with read-only Drive access (`drive.readonly`). Give `--scopes` the full URL. It opens a browser. If Google says "Google hasn't verified this app", that's your own testing-mode app: click **Continue**. Note that `drive.readonly` can read all of the files in your Drive (it cannot write).
 
 If a later `gws` command fails with `accessNotConfigured` ("Google Drive API has not been used in project ..."), the Drive API is off in that project. Turn it on with the link `gws` prints (or B1 above), wait a few seconds and try again. With gcloud you can also check it with `gcloud services list --enabled --project <PROJECT_ID>` and look for `drive.googleapis.com`.
 
@@ -234,8 +238,8 @@ bun run check
 | Variable | When you need it |
 | --- | --- |
 | `DUET_DRIVE_FILE_ID` | Only to skip the search by name |
-| `DUET_DISCORD_WEBHOOK` | You want a Discord alert when sending fails |
-| `DUET_TAG` | You want a default tag other than `[Claude Code]` |
+| `DUET_DISCORD_WEBHOOK` | You want a Discord alert when the send itself fails (for example a stale id). Not alerted, only printed to stderr: an id that can't be read (a `gws` error, a locked keychain), `claude` not found, a message that is too long, and the 60 second hook timeout. In hook mode nobody sees stderr, so those fail silently |
+| `DUET_TAG` | You want a default tag other than `[Claude Code]`. `--hook` doesn't use it (its tag is `[Claude Code: Stop]`; change that with `--tag`) |
 | `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` isn't on PATH, or you run duet-send on a schedule (step 8) |
 | `DUET_SESSION_ID` | Last resort: the id itself (it goes stale when the coordinator changes) |
 
@@ -319,6 +323,8 @@ Example crontab line on macOS (replace `you` and the paths with yours; on Linux,
 
 The job must run as the same user who ran `claude auth login` and `gws auth login`.
 
+**On macOS**, a job that runs while you are logged out, or outside your logged-in session, may find the login keychain locked. While it is locked, duet-send does not call `gws`. If `DUET_SESSION_ID` is set, it uses that; if not, it stops with an error (no Discord alert). See "the macOS login keychain is locked" under Troubleshooting.
+
 ## 9. Optional: tell the coordinator when Claude Code finishes (Stop hook)
 
 Claude Code can run a command each time it finishes responding. This is called a [Stop hook](https://code.claude.com/docs/en/hooks#stop). With `--hook`, duet-send turns that into a short message to your coordinator, so Duet hears about it when Claude Code on your computer is done.
@@ -332,13 +338,13 @@ Last message:
 I've fixed the failing test and pushed the branch. ...
 ```
 
-It holds the name of the folder Claude Code was working in (not the full path) and up to 500 characters of Claude's last reply.
+It holds the name of the folder Claude Code was working in (not the full path) and the first 500 characters of Claude's last reply (a longer reply is cut off with `…`).
 
 ### When it fires, and when it doesn't
 
 - It fires **every time Claude finishes a response**, not only when a whole task is done. A quick answer, or Claude stopping to ask you something, also sends a message. Expect one message per turn.
 - It does **not** fire when you interrupt Claude (Esc). When a turn ends because of an API error (rate limit, sign-in problem, and so on), Claude Code runs `StopFailure` instead; see the optional second entry below.
-- Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When sending fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert.
+- Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When `claude -p ... --cloud` itself fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert (the alert also needs a network connection). Problems before that, such as an id that can't be read, and the 60 second timeout only go to stderr, which nobody sees in hook mode.
 - Sending only queues the message. The coordinator reads it the next time it runs.
 
 So it is a reliable "a turn ended" signal while Claude Code is running normally, not a guarantee that every piece of work is reported.
@@ -446,7 +452,7 @@ About these settings:
 
 **If you run `claude -p` (non-interactive) and want a message at the end of those runs too:** Claude Code cancels async hooks that are still running when `claude -p` exits, so the message may not go out. Remove `"async": true` and add `"timeout": 90` instead. Claude Code then waits for the send, usually a few seconds, before it exits.
 
-**Optional second entry for API errors.** To also hear when a turn ends because of an API error, add a `"StopFailure"` entry next to `"Stop"`, with the same `"hooks"` list. The message then says which error it was.
+**Optional second entry for API errors.** To also hear when a turn ends because of an API error, add a `"StopFailure"` entry next to `"Stop"`, with the same `"hooks"` list. The message then says which error it was, when that is known.
 
 ### Environment variables for the hook
 
@@ -502,13 +508,13 @@ Install `gws` (step 4) and open a new terminal. In scheduled runs, or if `gws` i
 The coordinator hasn't written its id yet. Ask it to write its current session id into the file's description.
 
 **`gws could not search Drive ...`, `gws could not read Drive file ...` or `gws could not download the file ...` with `invalid_grant`, `error[auth]` or `401`**
-Your `gws` sign-in has expired or was revoked. Run `gws auth login -s drive` again, then retry.
+Your `gws` sign-in has expired or was revoked (in testing mode this happens every 7 days; see B2). Run `gws auth login --scopes https://www.googleapis.com/auth/drive.readonly` again, then retry. If you skipped step 4 because `gws` was already set up for other tools, sign in with the scopes you used before instead: `drive.readonly` alone is only for a `gws` that just duet-send uses.
 
 **`the macOS login keychain is locked, so gws was not run`**
 `gws` keeps the key for its sign-in in your login keychain, and when it can't read that keychain it deletes its saved sign-in. So duet-send doesn't call it while the keychain is locked. Log in to the Mac (or unlock the screen), or run `security unlock-keychain` in that session, then retry. Over SSH or in a background job, set `DUET_SESSION_ID` instead; duet-send then uses it without calling `gws`.
 
 **`Request had insufficient authentication scopes` right after `gws auth login`**
-`gws` lost its sign-in at some point and used gcloud's Application Default Credentials, which have no Drive access. It also cached that token. Run `gws auth status`: if `auth_method` is `none`, run `gws auth login -s drive`. If it is `oauth2` with a Drive scope, delete `~/.config/gws/token_cache.json` (only a cache; it is recreated) and retry.
+`gws` lost its sign-in at some point and used gcloud's Application Default Credentials, which have no Drive access. It also cached that token. Run `gws auth status`: if `auth_method` is `none`, run `gws auth login --scopes https://www.googleapis.com/auth/drive.readonly` (or, if other tools use `gws`, sign in with the scopes you used before). If it is `oauth2` with a Drive scope, delete `~/.config/gws/token_cache.json` (only a cache; it is recreated) and retry.
 
 **`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
 The file is missing, in a subfolder, or owned by another account. Ask the coordinator to create it in the root of your My Drive, or set `DUET_DRIVE_FILE_ID`.

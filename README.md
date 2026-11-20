@@ -8,13 +8,19 @@ Claude Duet's coordinator runs as a cloud Claude Code session. Claude Code can a
 
 - The coordinator keeps its current session id in the **description** of a file in your Google Drive, `duet-coordinator-session-id.txt`, and rewrites it whenever its id changes. (It uses the description because Claude's Google Drive connector can change a file's description but not its content.)
 - duet-send reads that description and sends your message to the right session.
-- If sending fails (for example because the id went stale), it can alert you on Discord.
+- If the send itself fails (for example because the id went stale), it can alert you on Discord.
 
 Use it to let a build script, a Discord bot, a scheduled job or a local Claude Code session hand work to your Duet coordinator. Works on **macOS, Linux and Windows**.
 
 ```sh
 bun run duet "The nightly build finished. 3 tests failed, please take a look."
 ```
+
+## Why this exists
+
+Claude Duet has no official, easy way to put a message into the coordinator from outside, such as a webhook. duet-send fills that gap with what is available today. We hope an official way arrives soon and makes this tool unnecessary.
+
+> **Unofficial.** duet-send is a personal project. It is not made, endorsed or supported by Anthropic or Google. Sending uses only documented Claude Code features (`claude -p --cloud` and hooks), but the rest relies on how Claude Duet behaves today (late 2026), which may change without notice: that the coordinator is a cloud session `--cloud` can reach, that its session id changes when it is replaced, how the coordinator looks up its own id, and that messages arrive without sender information. If duet-send stops working, check these first.
 
 ## Quick start (let an AI do it)
 
@@ -82,8 +88,8 @@ On macOS, `gws` is not run while the login keychain is locked (for example over 
 | --- | --- |
 | `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`, so `gws` can skip the search by name and read that file's description directly. |
 | `DUET_SESSION_ID` | The session id itself, as a last resort. It goes stale when the coordinator changes. |
-| `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]` |
-| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when sending fails. Session ids in the alert are shortened. |
+| `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]`. Not used by `--hook`, whose tag is `[Claude Code: Stop]`; change it with `--tag`. |
+| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when the send itself (`claude -p ... --cloud`) fails, for example a stale or archived id. Not alerted, only printed to stderr: failing to read the session id (a `gws` error, a locked keychain), `claude` not found, a message that is too long, and the 60 second hook timeout. Session ids in the alert are shortened. |
 | `DUET_CLAUDE_BIN` | Full path to `claude`. On Windows it must be `claude.exe`. Set it for scheduled runs. |
 | `DUET_GWS_BIN` | Full path to `gws`. Set it for scheduled runs. |
 | `DUET_HOOK` | When `1`, `--hook` does nothing. duet-send sets it on the `claude` it starts, so its own send never triggers the hook. |

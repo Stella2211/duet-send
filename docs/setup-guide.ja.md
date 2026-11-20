@@ -122,6 +122,8 @@ where.exe claude
 
 duet-send は `gws` でIDファイルの説明欄を読むので、コーディネーターが最後に書いたIDを常に取れます。`gws` は GitHub の googleworkspace オーガニゼーションが公開しているオープンソースのツールで、Google の公式サポート製品ではないと明記されています。まだ v1.0 前の段階です。
 
+**すでに `gws` を入れていて Drive を読めるなら、この手順は飛ばしてください。サインインもやり直さないでください。** `gws auth status` で確かめます。`auth_method` が `oauth2` で、スコープに `https://www.googleapis.com/auth/drive` か `https://www.googleapis.com/auth/drive.readonly` があれば大丈夫です。そのうえで、この手順の最後にある検索コマンドか、手順7の dry run が通ればOKです。`gws auth login` をやり直すと、今のサインインがそのとき選んだスコープで置き換わり、`gws` を使うほかのツールが Drive 以外や書き込みを使えなくなることがあります。
+
 次のどれかの方法で入れます。
 
 ```sh
@@ -136,7 +138,7 @@ Homebrew のない Linux では npm の行を使います（環境によって�
 
 `gws` には専用の OAuth クライアントが必要で、それは Google Cloud のプロジェクトの中に作ります。このガイドでいちばん手間のかかる所ですが、一度だけです。方法は2つあります。
 
-- **A. gcloud CLI で自動設定する。** `gws auth setup` がプロジェクトを作るか選び、API を有効にし、サインインまで進めます。`gcloud` が入っていて、サインイン済みである必要があります。ただし OAuth クライアントそのものは、Cloud Console で手で作る必要があります。必要になったところで setup が案内します（下の B2 と B3）。
+- **A. gcloud CLI で自動設定する。** `gws auth setup` がプロジェクトを作るか選び、API を有効にし、サインインするかを聞いてきます（`n` と答えます。下のA3を参照）。`gcloud` が入っていて、サインイン済みである必要があります。ただし OAuth クライアントそのものは、Cloud Console で手で作る必要があります。必要になったところで setup が案内します（下の B2 と B3）。
 - **B. Cloud Console で手で設定する。** `gcloud` はいりません。
 
 プロジェクトは、ほかの用途に使っているものではなく、**gws 専用に新しく作る** のをおすすめします。以下の手順で、そのプロジェクトの OAuth 同意画面や有効な API を変えるためです。
@@ -160,6 +162,8 @@ Homebrew のない Linux では npm の行を使います（環境によって�
    gws auth setup --project <PROJECT_ID>
    ```
 
+   最後に setup が「Run `gws auth login` now? [Y/n]」と聞いてきます。`n` と答えて、下の「最後にサインインする」のコマンドでサインインしてください。`Y` と答えると、ずっと広いスコープ（Drive 全体、Gmail、カレンダーなど）があらかじめ選ばれたスコープ選択画面が開きます。
+
    `--project` を付けないと gcloud の現在のプロジェクトを使い、それもないときは「No GCP project configured」で止まります（`gcloud config set project <PROJECT_ID>` で設定できます）。
 4. **「Manual OAuth client setup required」（または「OAuth client creation requires manual setup」）と出たら**、そのプロジェクトで下の B2 と B3 を行います。同意画面は setup がすでに作っていることがあるので、種類が外部になっているか、自分がテストユーザーに入っているかを確かめてください。続けてクライアントIDとクライアントシークレットを聞かれるので、貼り付けます。聞かれずに止まったときは、B3 のとおり JSON を保存してから `gws auth login` に進みます。
 
@@ -169,7 +173,7 @@ Homebrew のない Linux では npm の行を使います（環境によって�
 
 1. **Google Drive API を有効にする**：`https://console.cloud.google.com/apis/library/drive.googleapis.com?project=<PROJECT_ID>` を開いて **有効にする** を押します（**管理** と出ていれば有効になっています）。
 2. **OAuth 同意画面を設定する**：`https://console.cloud.google.com/apis/credentials/consent?project=<PROJECT_ID>` を開きます。
-   - ユーザーの種類（対象）：**外部**。テストモードのままで構いません。
+   - ユーザーの種類（対象）：**外部**。テストモードでも動きますが、その場合 Google はサインインを7日で切れるようにするので、サインインし直すまで `gws` が `invalid_grant` で失敗します。避けたいときは **アプリを公開**（Publish app）を押して「本番環境」にします。未確認のアプリのままですが、自分で使うだけなら問題ありません。
    - アプリ名は何でも構いません（たとえば `gws CLI`）。サポートメールは自分のアドレスにします。
    - **テストユーザー** で **ユーザーを追加** を押し、自分の Google アカウントを足します。これを忘れると、サインインが「アクセスをブロック」で失敗します。
 3. **OAuth クライアントを作る**：`https://console.cloud.google.com/apis/credentials?project=<PROJECT_ID>` を開き、**認証情報を作成 → OAuth クライアント ID** を選びます。
@@ -179,10 +183,10 @@ Homebrew のない Linux では npm の行を使います（環境によって�
 #### 最後にサインインする
 
 ```sh
-gws auth login -s drive
+gws auth login --scopes https://www.googleapis.com/auth/drive.readonly
 ```
 
-ブラウザが開きます。「このアプリは Google で確認されていません」と出たら、それは自分で作ったテストモードのアプリなので **続行** を押します。`drive` スコープはドライブ全体を読み書きできる権限なので注意してください。
+ブラウザが開きます。「このアプリは Google で確認されていません」と出たら、それは自分で作ったテストモードのアプリなので **続行** を押します。duet-send は読むだけなので、Drive の読み取り専用（`drive.readonly`）でサインインします。`--scopes` は完全なURLで指定します。`drive.readonly` は Drive のすべてのファイルを読める権限です（書き込みはできません）。
 
 あとで `gws` のコマンドが `accessNotConfigured`（「Google Drive API has not been used in project ...」）で失敗したら、そのプロジェクトで Drive API が無効です。`gws` が表示するリンク（または上の B1）から有効にし、数秒待ってからやり直します。gcloud があれば、`gcloud services list --enabled --project <PROJECT_ID>` に `drive.googleapis.com` があるかでも確かめられます。
 
@@ -234,8 +238,8 @@ bun run check
 | 変数 | 必要になるとき |
 | --- | --- |
 | `DUET_DRIVE_FILE_ID` | 名前での検索を省きたいとき |
-| `DUET_DISCORD_WEBHOOK` | 送信に失敗したら Discord に知らせてほしいとき |
-| `DUET_TAG` | 既定のタグを `[Claude Code]` 以外にしたいとき |
+| `DUET_DISCORD_WEBHOOK` | 送信そのものに失敗したら（IDが古いときなど）Discord に知らせてほしいとき。通知されず stderr に出るだけなのは、IDを読めなかったとき（`gws` のエラー、キーチェーンのロック）、`claude` が見つからないとき、本文が長すぎるとき、hook の60秒タイムアウトです。hook として動くときは stderr を見る人がいないので、これらは気づかれずに失敗します |
+| `DUET_TAG` | 既定のタグを `[Claude Code]` 以外にしたいとき。`--hook` では使われません（hook のタグは `[Claude Code: Stop]` で、変えるときは `--tag`） |
 | `DUET_CLAUDE_BIN` / `DUET_GWS_BIN` | `claude` / `gws` が PATH にないとき、または定期実行するとき（手順8） |
 | `DUET_SESSION_ID` | 最後の手段。IDそのもの（コーディネーターが変わると古くなります） |
 
@@ -319,6 +323,8 @@ macOS の crontab の例（`you` やパスは自分のものに置き換えて�
 
 ジョブは `claude auth login` と `gws auth login` をしたのと同じユーザーで動かしてください。
 
+**macOS では**、ログアウト中や、ログイン中のセッションの外で動くジョブは、ログインキーチェーンがロックされていることがあります。ロックされている間、duet-send は `gws` を呼びません。`DUET_SESSION_ID` を設定していればそれを使い、なければエラーで止まります（Discord には通知されません）。トラブルシューティングの「the macOS login keychain is locked」を見てください。
+
 ## 9. 任意：Claude Code が作業を終えたらコーディネーターに知らせる（Stop hook）
 
 Claude Code には、応答を終えるたびにコマンドを実行する仕組みがあります。これを [Stop hook](https://code.claude.com/docs/ja/hooks#stop) と呼びます。duet-send に `--hook` を付けると、それをコーディネーターへの短いメッセージに変えるので、手元の Claude Code が終わったことが Duet に伝わります。
@@ -332,13 +338,13 @@ Last message:
 I've fixed the failing test and pushed the branch. ...
 ```
 
-中身は、Claude Code が作業していたフォルダの名前（フルパスではありません）と、Claude の最後の返答の先頭500文字までです。
+中身は、Claude Code が作業していたフォルダの名前（フルパスではありません）と、Claude の最後の返答の先頭500文字までです（長い場合は `…` で切ります）。
 
 ### 動くとき、動かないとき
 
 - **Claude が応答を終えるたびに** 動きます。タスク全体が終わったときだけではありません。短い返事や、Claude があなたに質問して止まったときにも送られます。1ターンごとに1通届くと考えてください。
 - あなたが Esc で中断したときは **動きません**。API のエラー（利用上限やサインインの問題など）でターンが終わったときは、代わりに `StopFailure` が動きます（下の「エラー用の2つ目の設定」を参照）。
-- ターンの途中で Claude Code を閉じた・落ちたとき、パソコンがオフラインのとき、`claude` がサインインしていないときは送られません。送信に失敗し、`DUET_DISCORD_WEBHOOK` を設定していれば、いつもどおり Discord に知らせます。
+- ターンの途中で Claude Code を閉じた・落ちたとき、パソコンがオフラインのとき、`claude` がサインインしていないときは送られません。`claude -p ... --cloud` 自体が失敗し、`DUET_DISCORD_WEBHOOK` を設定していれば、いつもどおり Discord に知らせます（通知にもネットワークが必要です）。それより前の問題（IDを読めなかったときなど）と60秒のタイムアウトは stderr に出るだけで、hook では誰の目にも触れません。
 - 送信はメッセージを届けるだけです。コーディネーターは次に動いたときに読みます。
 
 つまり、Claude Code が普通に動いている限り「ターンが終わった」ことは確実に届きますが、どんな作業も必ず報告されるという保証ではありません。
@@ -446,7 +452,7 @@ jq --arg bun "$BUN" --arg send "$SEND" \
 
 **`claude -p`（非対話モード）の終わりにも知らせたいとき：** `claude -p` が終了するときに動いている async の hook は Claude Code が打ち切るので、メッセージが送られないことがあります。`"async": true` を外して、代わりに `"timeout": 90` を書いてください。Claude Code は送信（ふつう数秒）を待ってから終了します。
 
-**エラー用の2つ目の設定（任意）。** API のエラーでターンが終わったときにも知りたいなら、`"Stop"` の隣に `"StopFailure"` を足し、同じ `"hooks"` の中身を書きます。メッセージにはエラーの種類が入ります。
+**エラー用の2つ目の設定（任意）。** API のエラーでターンが終わったときにも知りたいなら、`"Stop"` の隣に `"StopFailure"` を足し、同じ `"hooks"` の中身を書きます。メッセージには（エラーの種類がわかるときは）その種類が入ります。
 
 ### hook の環境変数
 
@@ -502,13 +508,13 @@ hook は Claude Code の環境変数を引き継ぐので、手順6の変数は�
 コーディネーターがまだIDを書いていません。今のセッションIDをファイルの説明欄に書くよう頼んでください。
 
 **`gws could not search Drive ...`、`gws could not read Drive file ...` または `gws could not download the file ...` に `invalid_grant`、`error[auth]`、`401` が含まれる**
-`gws` のサインインが切れたか、取り消されています。`gws auth login -s drive` をもう一度実行してから、やり直してください。
+`gws` のサインインが切れたか、取り消されています（テストモードでは7日ごとに切れます。B2 を参照）。`gws auth login --scopes https://www.googleapis.com/auth/drive.readonly` をもう一度実行してから、やり直してください。手順4を飛ばした（ほかのツール用に `gws` を設定済みだった）場合は、代わりに前と同じスコープでサインインしてください。`drive.readonly` だけにするのは、`gws` を duet-send だけで使う場合です。
 
 **`the macOS login keychain is locked, so gws was not run`**
 `gws` はサインイン情報の鍵をログインキーチェーンに置いていて、キーチェーンを読めないと保存したサインイン情報を消してしまいます。そのため duet-send は、キーチェーンがロックされている間は `gws` を呼びません。Mac にログインする（画面のロックを解除する）か、そのセッションで `security unlock-keychain` を実行してから、やり直してください。SSH 経由やバックグラウンドのジョブでは、代わりに `DUET_SESSION_ID` を設定してください。その場合は `gws` を呼ばずにそのIDを使います。
 
 **`gws auth login` のあとも `Request had insufficient authentication scopes` が出る**
-`gws` がどこかでサインイン情報を失い、Drive の権限がない gcloud のアプリケーションのデフォルト認証情報（ADC）を使ったうえ、そのトークンを保存しています。`gws auth status` を実行し、`auth_method` が `none` なら `gws auth login -s drive` を実行してください。`oauth2` で Drive のスコープがあるなら、`~/.config/gws/token_cache.json`（ただのキャッシュで、作り直されます）を削除してからやり直してください。
+`gws` がどこかでサインイン情報を失い、Drive の権限がない gcloud のアプリケーションのデフォルト認証情報（ADC）を使ったうえ、そのトークンを保存しています。`gws auth status` を実行し、`auth_method` が `none` なら `gws auth login --scopes https://www.googleapis.com/auth/drive.readonly` を実行してください（ほかのツールでも `gws` を使っているなら、前と同じスコープでサインインします）。`oauth2` で Drive のスコープがあるなら、`~/.config/gws/token_cache.json`（ただのキャッシュで、作り直されます）を削除してからやり直してください。
 
 **`gws found no duet-coordinator-session-id.txt in the root of your My Drive`**
 ファイルがない、サブフォルダにある、または別のアカウントが持ち主になっています。コーディネーターにマイドライブ直下へ作ってもらうか、`DUET_DRIVE_FILE_ID` を設定してください。

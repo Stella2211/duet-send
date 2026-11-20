@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * duet-send: send a message to your Claude Duet coordinator (macOS / Windows)
+ * duet-send: send a message to your Claude Duet coordinator (macOS / Linux / Windows)
  *
  *   bun run duet "message"
  *   echo "message" | bun run duet
