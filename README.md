@@ -89,7 +89,7 @@ On macOS, `gws` is not run while the login keychain is locked (for example over 
 | `DUET_DRIVE_FILE_ID` | Drive file id of `duet-coordinator-session-id.txt`, so `gws` can skip the search by name and read that file's description directly. |
 | `DUET_SESSION_ID` | The session id itself, as a last resort. It goes stale when the coordinator changes. |
 | `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]`. Not used by `--hook`, whose tag is `[Claude Code: Stop]`; change it with `--tag`. |
-| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when the send itself (`claude -p ... --cloud`) fails, for example a stale or archived id, or being offline. Not alerted, only printed to stderr: failing to read the session id (a `gws` error, a locked keychain, `claude` not found), a message that is too long, and the 60 second hook timeout. Session ids in the alert are shortened. |
+| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when the send itself (`claude -p ... --cloud`) fails, for example a stale or archived id. Not alerted, only printed to stderr: failing to read the session id (a `gws` error, a locked keychain), `claude` not found, a message that is too long, and the 60 second hook timeout. Session ids in the alert are shortened. |
 | `DUET_CLAUDE_BIN` | Full path to `claude`. On Windows it must be `claude.exe`. Set it for scheduled runs. |
 | `DUET_GWS_BIN` | Full path to `gws`. Set it for scheduled runs. |
 | `DUET_HOOK` | When `1`, `--hook` does nothing. duet-send sets it on the `claude` it starts, so its own send never triggers the hook. |

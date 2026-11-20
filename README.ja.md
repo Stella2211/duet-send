@@ -89,7 +89,7 @@ macOS では、ログインキーチェーンがロックされているとき�
 | `DUET_DRIVE_FILE_ID` | `duet-coordinator-session-id.txt` の Drive ファイルID。`gws` が名前で探す手間を省き、そのファイルの説明欄を直接読みます。 |
 | `DUET_SESSION_ID` | 最後の手段として、IDそのものを指定します。コーディネーターが変わると古くなります。 |
 | `DUET_TAG` | メッセージの先頭に付ける既定のタグ。既定値は `[Claude Code]` です。`--hook` では使われず、hook のタグは `[Claude Code: Stop]` です。変えるときは `--tag` を使います。 |
-| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済み、オフラインなどが対象です。通知されず stderr に出るだけなのは、セッションIDを読めなかったとき（`gws` のエラー、キーチェーンのロック、`claude` が見つからない）、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
+| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済みのときなどが対象です。通知されず stderr に出るだけなのは、セッションIDを読めなかったとき（`gws` のエラー、キーチェーンのロック）、`claude` が見つからないとき、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
 | `DUET_CLAUDE_BIN` | `claude` のフルパス。Windows では `claude.exe` を指定します。定期実行では設定してください。 |
 | `DUET_GWS_BIN` | `gws` のフルパス。定期実行では設定してください。 |
 | `DUET_HOOK` | `1` のとき、`--hook` は何もしません。duet-send は自分が起動する `claude` にこれを付けるので、自分の送信で hook が動くことはありません。 |
