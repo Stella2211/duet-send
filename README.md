@@ -82,6 +82,8 @@ duet-send uses the first one it finds:
 
 On macOS, `gws` is not run while the login keychain is locked (for example over SSH or in a job outside your logged-in session). In that state `gws` would delete its saved sign-in, because the key for it is in that keychain. duet-send then uses `DUET_SESSION_ID` if it is set, and otherwise stops and asks you to unlock the keychain.
 
+**Looking for a lighter way.** Today the session id is kept in Google Drive, but setting up `gws` is the heaviest part of installing duet-send, so we are looking for another way to hand over the id. If you know a good one, please tell us in an [issue](https://github.com/Stella2211/duet-send/issues).
+
 ## Environment variables (all optional)
 
 | Variable | What it does |
