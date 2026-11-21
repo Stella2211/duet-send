@@ -38,7 +38,14 @@ describe("--hook: the last message", () => {
     expect(text.length).toBe(MAX_LEN);
   });
 
-  test("a reply far past 500 characters keeps its later part", async () => {
+  test("one character over the limit is cut, with …", async () => {
+    const header = "Claude Code finished responding in duet-send.\n\nLast message:\n";
+    const last = "a".repeat(MAX_LEN - header.length + 1);
+    const text = await hookDryRun(stop(last));
+    expect(text).toBe(`${header}${"a".repeat(MAX_LEN - header.length - 1)}…`);
+  });
+
+  test("a reply far past the old 500-character cut keeps its later part", async () => {
     const last = `${"x".repeat(3000)}[END]`;
     const text = await hookDryRun(stop(last));
     expect(text.endsWith("[END]")).toBe(true);
@@ -51,7 +58,7 @@ describe("--hook: the last message", () => {
     ["a long folder name and background tasks", "abcdefghij".repeat(2000), { cwd: `/home/u/${"f".repeat(200)}`, background_tasks: [{}, {}, {}] }],
   ];
   for (const [name, last, extra] of cases) {
-    test(`a too-long ${name} reply is cut to exactly the limit, ending with …`, async () => {
+    test(`a too-long ${name} reply is cut to the limit, ending with …`, async () => {
       const text = await hookDryRun(stop(last, extra));
       expect(text.length).toBeLessThanOrEqual(MAX_LEN);
       expect(text.length).toBeGreaterThanOrEqual(MAX_LEN - 1);

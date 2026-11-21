@@ -338,7 +338,7 @@ Last message:
 I've fixed the failing test and pushed the branch. ...
 ```
 
-It holds the name of the folder Claude Code was working in (not the full path) and Claude's last reply. The whole message can be up to 8,000 characters (the same limit as any duet-send message), so the reply gets all the room left after the first line; a longer reply is cut off there with `…`.
+It holds the name of the folder Claude Code was working in (not the full path) and Claude's last reply. The whole message, not counting the tag, can be up to 8,000 characters (the same limit as any duet-send message), so the reply gets all the room left after the first line; a longer reply is cut off there with `…`.
 
 ### When it fires, and when it doesn't
 
