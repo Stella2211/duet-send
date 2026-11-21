@@ -31,8 +31,6 @@ const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
 const HOOK_TAG = "[Claude Code: Stop]";
-// Longest part of the last assistant message that goes into a hook notification.
-const HOOK_SUMMARY_LEN = 500;
 // A hook run gives up after this long, so it never hangs around.
 const HOOK_TIMEOUT_MS = 60_000;
 
@@ -375,9 +373,18 @@ type HookInput = {
   error?: unknown;
 };
 
+// Shortens text to at most `max` UTF-16 units (the unit MAX_LEN is counted in),
+// ending with "…" when it was cut. A character is never split in half.
 function clip(text: string, max: number): string {
-  const chars = Array.from(sanitize(text).trim());
-  return chars.length > max ? `${chars.slice(0, max).join("").trimEnd()}…` : chars.join("");
+  const clean = sanitize(text).trim();
+  if (clean.length <= max) return clean;
+  if (max < 1) return "";
+  let kept = "";
+  for (const ch of clean) {
+    if (kept.length + ch.length > max - 1) break;
+    kept += ch;
+  }
+  return `${kept.trimEnd()}…`;
 }
 
 // Builds the notification from the hook's JSON, or returns null when nothing should be sent.
@@ -411,8 +418,11 @@ async function hookMessage(): Promise<string | null> {
     const n = input.background_tasks.length;
     msg += ` ${n} background task${n === 1 ? " is" : "s are"} still running.`;
   }
-  const last = typeof input.last_assistant_message === "string" ? clip(input.last_assistant_message, HOOK_SUMMARY_LEN) : "";
-  if (last) msg += `\n\nLast message:\n${last}`;
+  // The last message gets all the room left under MAX_LEN, and is cut off with "…" beyond that.
+  const label = "\n\nLast message:\n";
+  const room = MAX_LEN - sanitize(msg).length - label.length;
+  const last = typeof input.last_assistant_message === "string" ? clip(input.last_assistant_message, room) : "";
+  if (last) msg += `${label}${last}`;
   return msg;
 }
 

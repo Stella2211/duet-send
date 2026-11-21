@@ -15,7 +15,8 @@
   },
   "scripts": {
     "duet": "bun run send.ts",
-    "check": "bun build send.ts --target=bun --outdir=dist"
+    "check": "bun build send.ts --target=bun --outdir=dist",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest"
