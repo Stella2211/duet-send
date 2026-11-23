@@ -16,9 +16,11 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 export function parseRoutes(text: string, where: string): Routes {
   let data: unknown;
   try {
-    data = JSON.parse(text.replace(/^\uFEFF/, ""));
+    data = JSON.parse(text.replace(/^\uFEFF/, "").trim());
   } catch {
-    throw new RoutesError(`${where} is not valid JSON`);
+    // Typing in Google Docs by hand turns " into curly quotes, which JSON doesn't accept.
+    const hint = /[\u201C\u201D]/.test(text) ? ' (it has curly quotes \u201C\u201D; use straight " quotes)' : "";
+    throw new RoutesError(`${where} is not valid JSON${hint}`);
   }
   if (!isPlainObject(data)) throw new RoutesError(`${where} must be a JSON object`);
   if (typeof data.version !== "number") throw new RoutesError(`${where} has no numeric "version"`);
@@ -59,12 +61,30 @@ export interface RoutesSource {
   load(signal: AbortSignal): Promise<string>;
 }
 
-export function driveRoutesSource(fileId: string): RoutesSource {
+// The routes table lives in a Google Docs document shared as "Anyone with the link: Viewer".
+// Its plain-text export can be read without signing in. The coordinator rewrites the body
+// with its Google Docs connector whenever its session id changes.
+export const DOC_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const DOCS_ORIGIN = "https://docs.google.com";
+
+// `origin` is only for tests (a local stub server).
+export function googleDocsRoutesSource(docId: string, origin = DOCS_ORIGIN): RoutesSource {
+  if (!DOC_ID_PATTERN.test(docId)) throw new RoutesError("the document id does not look like a Google Docs document id");
+  const label = "the routes document (Google Docs)";
   return {
-    label: `Google Drive file ${fileId}`,
-    async load(_signal: AbortSignal): Promise<string> {
-      // TODO: fetch the public routes file here.
-      throw new RoutesError("not implemented yet");
+    label,
+    async load(signal: AbortSignal): Promise<string> {
+      const url = `${origin}/document/d/${docId}/export?format=txt`;
+      const res = await fetch(url, { signal, redirect: "follow", headers: { Accept: "text/plain" } });
+      const type = res.headers.get("content-type") ?? "";
+      // A document that isn't shared by link answers with a sign-in page (401, or 200 HTML after a redirect).
+      if (res.status === 401 || res.status === 403 || res.status === 404 || /text\/html/i.test(type)) {
+        throw new RoutesError(
+          `could not read ${label} (HTTP ${res.status}). Check the document id, and that the document is shared as "Anyone with the link" with the Viewer role.`,
+        );
+      }
+      if (!res.ok) throw new RoutesError(`could not read ${label} (HTTP ${res.status})`);
+      return await res.text();
     },
   };
 }
