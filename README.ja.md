@@ -6,8 +6,9 @@
 
 Claude Duet のコーディネーターは、クラウド上の Claude Code セッションとして動いています。Claude Code には `claude -p "メッセージ" --cloud <セッションID>` でクラウドのセッションにメッセージを送る機能がありますが、コーディネーターのセッションIDはときどき変わり、スクリプトの側では新しいIDがわかりません。duet-send は、この小さいけれど地味に困る問題を解決します。
 
-- コーディネーターが、自分の今のセッションIDを Google ドライブのファイル `duet-coordinator-session-id.txt` の **説明欄** に書いておき、IDが変わるたびに書き換えます。（説明欄を使うのは、Claude の Google ドライブ コネクタがファイルの説明欄は変えられても、本文は変えられないためです。）
-- duet-send はその説明欄を読んで、正しいセッションにメッセージを送ります。
+- コーディネーターが、自分の今のセッションIDを小さな **ルーティング表**（1行の JSON）として、Google ドライブの1つのファイルの **ファイル名** に入れておき、IDが変わるたびにファイル名を付け替えます。（ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、本文は変えられないためです。）
+- そのファイルは「リンクを知っている全員」・権限は **閲覧者** で共有します。duet-send は Google にサインインせず、ふつうの HTTPS でファイル名を読めます。ファイルの本文はダミーで、読みません。
+- duet-send はルーティング表を読んで、正しいセッションにメッセージを送ります。
 - 送信そのものに失敗したとき（IDが古くなったときなど）は、Discord に知らせることもできます。
 
 ビルドスクリプト、Discord ボット、定期実行のジョブ、手元の Claude Code などから、Duet のコーディネーターに仕事を渡すのに使えます。**macOS、Linux、Windows** で動きます。
@@ -26,30 +27,30 @@ Claude Duet には、外からコーディネーターにメッセージを入�
 
 このリポジトリのリンクをAIに渡して、次の順で導入を頼んでください。
 
-1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿ってIDのファイルを作ります。Google ドライブに書く前と、1時間ごとに自分のIDを確かめ直すための合図（定期実行）を作る前に、あなたに確認します。
-2. **手元のパソコンの Claude Code で**：「https://github.com/Stella2211/duet-send の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。足りないものを入れ、このリポジトリを取ってきて、送信のリハーサル（dry run）まで行います。
+1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿って、Google ドライブに `duet-send` フォルダを作り、その中にルーティング表のファイルと、フォルダの説明を書いた短い README を置きます。Google ドライブに書く前に確認し、ファイルをリンクで共有する（閲覧者のみ）ようあなたに頼み、ファイルの Drive ID を教えます。1時間ごとに自分のIDを確かめ直すための合図（定期実行）を作る前にも確認します。
+2. **手元のパソコンの Claude Code で**：「https://github.com/Stella2211/duet-send の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。足りないものを入れ、このリポジトリを取ってきて、`DUET_ROUTES_FILE_ID` を設定し（あなたの了承を得て）、送信のリハーサル（dry run）まで行います。
 
 ## 手で導入する
 
-**まず、IDのファイルが必要です。** Duet のコーディネーターに設定を頼んでください（上の1）。コーディネーターがマイドライブに `duet-coordinator-session-id.txt` を書くまでは、duet-send は読むものがありません。
+**まず、ルーティング表のファイルが必要です。** Duet のコーディネーターに設定を頼んでください（上の1）。コーディネーターがファイルを作り、あなたがリンクで共有（閲覧者）すると、コーディネーターがそのファイルの Drive ID（ファイルのリンクの `/d/` の後ろの部分、または `id=` の値）を教えます。それまでは、duet-send は読むものがありません。
 
 必要なもの：
 
 - [git](https://git-scm.com/downloads)（なければ、下のように ZIP でダウンロードしても構いません）
 - [Bun](https://bun.com)
 - ネイティブ版の [Claude Code](https://code.claude.com/docs/en/setup)（`claude auth login` でサインイン済み）
-- Google Workspace CLI（`gws`）。IDファイルがある Google アカウントでサインインしておきます
 
 ```sh
 git clone https://github.com/Stella2211/duet-send.git
 cd duet-send
+export DUET_ROUTES_FILE_ID="<FILE_ID>"   # コーディネーターに教わった Drive ID（Windows は導入ガイドを参照）
 bun run duet --dry-run "テスト"   # すべて確認するが、送らない
 bun run duet "テスト"             # 実際に送る
 ```
 
 git がない場合は、リポジトリのページで **Code → Download ZIP** を選び、展開したフォルダでターミナルを開いてください。
 
-macOS、Linux、Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。
+macOS、Linux、Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。0.2（gws を使う版）から更新する場合は [0.2（gws）からの移行](docs/setup-guide.ja.md#02gwsからの移行) を見てください。
 
 ## 使い方
 
@@ -71,34 +72,38 @@ bun run duet --verbose "メッセージ"
 bun /path/to/duet-send/send.ts --tag "[バックアップ]" "バックアップが終わりました"
 ```
 
-任意で、duet-send を Claude Code の [Stop hook](https://code.claude.com/docs/ja/hooks#stop) として動かすこともできます（`send.ts --hook`）。手元の Claude Code が応答を終えるたびに、コーディネーターに知らせます。[導入ガイドの手順9](docs/setup-guide.ja.md#9-任意claude-code-が作業を終えたらコーディネーターに知らせるstop-hook) を見てください。
+任意で、duet-send を Claude Code の [Stop hook](https://code.claude.com/docs/ja/hooks#stop) として動かすこともできます（`send.ts --hook`）。手元の Claude Code が応答を終えるたびに、コーディネーターに知らせます。[導入ガイドの手順8](docs/setup-guide.ja.md#8-任意claude-code-が作業を終えたらコーディネーターに知らせるstop-hook) を見てください。
 
 ## セッションIDの読み込み先
 
-次の順に探して、最初に見つかったものを使います。
+ルーティング表は1行の JSON で、ルーティング表のファイルの **ファイル名** になっています。
 
-1. Google Workspace CLI（`gws`）：自分のマイドライブ直下からファイルを探し（`DUET_DRIVE_FILE_ID` があればそのファイルを使い）、ファイルの **説明欄** を読みます。説明欄が空のときは、代わりにファイルの本文をダウンロードします。説明欄を使う前に用意したファイルも、そのまま使えます。他人から共有されたファイルは無視します。
-2. `DUET_SESSION_ID`：IDそのもの
+```json
+{"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_..."}}
+```
 
-macOS では、ログインキーチェーンがロックされているとき（SSH 経由や、ログイン中のセッションの外で動くジョブなど）は `gws` を呼びません。サインイン情報の鍵がこのキーチェーンにあるため、その状態で `gws` を動かすと、保存したサインイン情報を `gws` が消してしまうからです。このとき `DUET_SESSION_ID` があればそれを使い、なければキーチェーンのアンロックを促して止まります。
+- `routes` はルート名からセッションIDへの対応です。`main` はコーディネーター自身です。ほかのルートを足すこともできます。
+- `default` は、ルートを選ばなかったときに使うルート名です。
+- `updated_at` は省略できます。`--dry-run` で表示するだけです。
 
-**もっと軽い方法を探しています。** 今はセッションIDの置き場所に Google ドライブを使っていますが、`gws` の設定まわりが導入でいちばん重い部分なので、別の方法を探しています。いい方法をご存じなら、[issue](https://github.com/Stella2211/duet-send/issues) で教えてください。
+duet-send は `https://drive.google.com/uc?export=download&id=<FILE_ID>` にサインインなしのふつうの HTTPS でアクセスし、レスポンスの `Content-Disposition` ヘッダーからファイル名だけを読みます（本文は読みません）。ファイル名の最初の `{` から最後の `}` までをルーティング表の JSON として解釈するので、末尾に `.json` のような拡張子が付いていても問題ありません。ファイルがリンク共有になっていないと、Google はサインインのページを返すので、duet-send はIDと「リンクを知っている全員」・閲覧者の設定を確かめるよう伝えます。
+
+`DUET_ROUTES_FILE_ID` がないときは `DUET_SESSION_ID` を使います。ルーティング表のファイルを読めない・解釈できないときも、`DUET_SESSION_ID` があれば、stderr に警告を出してそれを使います。存在しないルートや不正なルートは、必ず失敗します。
 
 ## 環境変数（すべて任意）
 
 | 変数 | 役割 |
 | --- | --- |
-| `DUET_DRIVE_FILE_ID` | `duet-coordinator-session-id.txt` の Drive ファイルID。`gws` が名前で探す手間を省き、そのファイルの説明欄を直接読みます。 |
-| `DUET_SESSION_ID` | 最後の手段として、IDそのものを指定します。コーディネーターが変わると古くなります。 |
+| `DUET_ROUTES_FILE_ID` | ルーティング表のファイルの Drive ID（ファイルのリンクの `/d/` の後ろの部分、または `id=` の値）。コーディネーターが教えてくれます。 |
+| `DUET_SESSION_ID` | セッションIDそのもの。`DUET_ROUTES_FILE_ID` がないときに使い、ルーティング表のファイルを読めないときも代わりに使います（警告が出ます）。コーディネーターが変わると古くなります。 |
 | `DUET_TAG` | メッセージの先頭に付ける既定のタグ。既定値は `[Claude Code]` です。`--hook` では使われず、hook のタグは `[Claude Code: Stop]` です。変えるときは `--tag` を使います。 |
-| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済みのときなどが対象です。通知されず stderr に出るだけなのは、セッションIDを読めなかったとき（`gws` のエラー、キーチェーンのロック）、`claude` が見つからないとき、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
+| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済みのときなどが対象です。通知されず stderr に出るだけなのは、ルーティング表のファイルを読めなかったとき、`claude` が見つからないとき、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
 | `DUET_CLAUDE_BIN` | `claude` のフルパス。Windows では `claude.exe` を指定します。定期実行では設定してください。 |
-| `DUET_GWS_BIN` | `gws` のフルパス。定期実行では設定してください。 |
 | `DUET_HOOK` | `1` のとき、`--hook` は何もしません。duet-send は自分が起動する `claude` にこれを付けるので、自分の送信で hook が動くことはありません。 |
 
 ## 知っておくと良いこと
 
-- あなたのセッションに送れるのはあなた自身の Claude アカウントだけなので、IDファイルはパスワードではありません。それでも自分のドライブに置き、人には共有しないでください。
+- ファイルのIDを知っている人は、ルート名とセッションIDを読めますし、あなたの Google アカウントの名前とメールアドレスも見えます（Google は共有ファイルの持ち主を表示します）。ただし、ファイルを編集することはできず（閲覧者のみ）、あなたのセッションに送ることもできません（送るにはあなた自身の Claude サインインが必要です）。それでも、IDは自分だけで持ち、コミットしないでください。ファイルを編集権限で共有してはいけません。編集できる人は、ファイル名を変えて、あなたのメッセージの届け先を変えられます。
 - Windows では、npm が作る `claude.cmd` を使わずに止まります。`cmd.exe` を通すと本文が壊れたり、コマンドとして実行されたりするおそれがあるためです。ネイティブ版の `claude.exe` を入れてください。
 - 本文は8,000文字までです。改行コードは `\n` にそろえ、タブ以外の制御文字は取り除きます。
 - 送信はメッセージを届けるだけで、コーディネーターの返事は待ちません。返事は Duet で確認してください。

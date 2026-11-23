@@ -8,26 +8,15 @@
  *   bun run duet --dry-run "message"   # print the target and body, send nothing
  *   bun /path/to/send.ts --hook         # Claude Code Stop hook: reads the hook JSON on stdin
  *
- * The coordinator keeps its session id in the Drive *description* of
- * duet-coordinator-session-id.txt in the root of your My Drive (its Drive connector
- * can change a file's description but not its content). Lookup order:
- *   1. Google Workspace CLI (gws): reads the file's description straight from Drive,
- *      or its content when the description is empty (finds the file in your My Drive
- *      root, or uses DUET_DRIVE_FILE_ID if set)
- *   2. DUET_SESSION_ID (the id itself)
- * On macOS, gws is skipped while the login keychain is locked (see macKeychainLocked):
- * DUET_SESSION_ID is used if set, otherwise duet-send stops and asks to unlock it.
+ * The destination comes from a routes table (JSON mapping route names to session ids) kept
+ * as the name of a Google Drive file shared by link, named by DUET_ROUTES_FILE_ID (see
+ * routes.ts). If it cannot be read, DUET_SESSION_ID (the id itself) is used instead when set.
+ * Without DUET_ROUTES_FILE_ID, DUET_SESSION_ID is used.
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
-import { dlopen, FFIType, ptr } from "bun:ffi";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
-const FILE_NAME = "duet-coordinator-session-id.txt";
-// Claude Code accepts both session_... and cse_... ids for `--cloud`.
-const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
 const HOOK_TAG = "[Claude Code: Stop]";
@@ -105,222 +94,41 @@ function maskIdsIn(text: string): string {
   return text.replace(/\b(?:session|cse)_[A-Za-z0-9]+/g, (m) => maskId(m));
 }
 
-// Wrapper for launching npm's gws.cmd on Windows.
-// Only fixed or validated arguments go through here (never the message body).
-function cmdWrap(bin: string, args: string[]): string[] {
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) return ["cmd.exe", "/d", "/s", "/c", bin, ...args];
-  return [bin, ...args];
-}
+type Resolved = { id: string; source: string; route?: string; updatedAt?: string };
 
-// Read the file straight from Drive with the Google Workspace CLI (https://github.com/googleworkspace/cli).
-// Only the file in the root of your own My Drive is accepted, so a file with the same
-// name that someone else shared with you is never used.
-// docs/setup-guide*.md show the same query for a manual check; keep them in sync.
-const GWS_QUERY = `name = '${FILE_NAME}' and 'root' in parents and 'me' in owners and trashed = false`;
-const DRIVE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-type GwsResult = { code: number; stdout: string; stderr: string };
-
-async function runGws(gws: string, args: string[], cwd: string): Promise<GwsResult> {
-  const proc = Bun.spawn(cmdWrap(gws, args), { cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
-  children.add(proc);
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { code, stdout, stderr };
-}
-
-// gws prints a one-line error to stderr and a JSON error body to stdout.
-// Its log lines (such as "Using keyring backend: keyring") are left out.
-function gwsReason(r: GwsResult): string {
-  const lines = r.stderr
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l && !/^using keyring backend/i.test(l));
-  const errors = lines.filter((l) => /^error/i.test(l));
-  const err = (errors.length ? errors : lines).join(" ");
-  if (err) return err.slice(0, 400);
-  try {
-    const msg = JSON.parse(r.stdout)?.error?.message;
-    if (msg) return String(msg).slice(0, 400);
-  } catch {}
-  return r.stdout.trim().slice(0, 400) || "(no output)";
-}
-
-type DriveFile = { id: string; description: string };
-
-function driveFileFrom(json: { id?: unknown; description?: unknown } | undefined): DriveFile | null {
-  const id = String(json?.id ?? "");
-  if (!DRIVE_ID_PATTERN.test(id)) {
-    console.error("duet: gws returned an unexpected file id");
-    return null;
-  }
-  const description = typeof json?.description === "string" ? json.description : "";
-  return { id, description };
-}
-
-// Finds the id file by name and returns its Drive file id and description in one call.
-async function findDriveFile(gws: string, cwd: string): Promise<DriveFile | null> {
-  const params = JSON.stringify({
-    q: GWS_QUERY,
-    orderBy: "modifiedTime desc",
-    pageSize: 10,
-    fields: "files(id,description)",
-  });
-  const r = await runGws(gws, ["drive", "files", "list", "--params", params], cwd);
-  if (r.code !== 0) {
-    console.error(`duet: gws could not search Drive for ${FILE_NAME} (exit ${r.code}): ${gwsReason(r)}`);
-    return null;
-  }
-  let files: { id?: unknown; description?: unknown }[];
-  try {
-    files = JSON.parse(r.stdout)?.files ?? [];
-  } catch {
-    console.error(`duet: could not read the output of gws drive files list: ${r.stdout.trim().slice(0, 200)}`);
-    return null;
-  }
-  if (files.length === 0) {
-    console.error(
-      `duet: gws found no ${FILE_NAME} in the root of your My Drive. ` +
-        "Ask your Duet coordinator to create it, or set DUET_DRIVE_FILE_ID.",
-    );
-    return null;
-  }
-  if (files.length > 1) {
-    console.error(
-      `duet: warning: found ${files.length} files named ${FILE_NAME} in your My Drive; using the most recently modified one. ` +
-        "Delete the old ones, or set DUET_DRIVE_FILE_ID.",
-    );
-  }
-  return driveFileFrom(files[0]);
-}
-
-// Reads the description of the file named by DUET_DRIVE_FILE_ID.
-async function getDriveFile(gws: string, fileId: string, cwd: string): Promise<DriveFile | null> {
-  const params = JSON.stringify({ fileId, fields: "id,description" });
-  const r = await runGws(gws, ["drive", "files", "get", "--params", params], cwd);
-  if (r.code !== 0) {
-    console.error(`duet: gws could not read Drive file ${fileId} (exit ${r.code}): ${gwsReason(r)}`);
-    return null;
-  }
-  try {
-    return driveFileFrom(JSON.parse(r.stdout));
-  } catch {
-    console.error(`duet: could not read the output of gws drive files get: ${r.stdout.trim().slice(0, 200)}`);
-    return null;
-  }
-}
-
-// Returns the session id and where it came from, or null after printing why it failed.
-// The description is used first; the file content only when the description is empty,
-// so setups made before the description was used keep working.
-async function readViaGws(gws: string): Promise<{ id: string; source: string } | null> {
-  const envId = process.env.DUET_DRIVE_FILE_ID?.trim();
-  if (envId && !DRIVE_ID_PATTERN.test(envId)) fail("DUET_DRIVE_FILE_ID does not look like a Drive file id");
-
-  // gws only writes --output inside its working directory, so run it in a temp dir
-  // and pass a bare file name. realpath: on macOS the temp dir is behind a symlink.
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "duet-")));
-  try {
-    const file = envId ? await getDriveFile(gws, envId, dir) : await findDriveFile(gws, dir);
-    if (!file) return null;
-
-    if (file.description.trim()) {
-      const where = `the description of Drive file ${file.id}`;
-      return { id: parseId(file.description, where), source: "gws (Google Drive, file description)" };
-    }
-
-    const r = await runGws(
-      gws,
-      ["drive", "files", "get", "--params", JSON.stringify({ fileId: file.id, alt: "media" }), "-o", FILE_NAME],
-      dir,
-    );
-    const out = join(dir, FILE_NAME);
-    if (r.code !== 0 || !existsSync(out)) {
-      console.error(`duet: gws could not download the file (exit ${r.code}): ${gwsReason(r)}`);
-      return null;
-    }
-    const content = readFileSync(out, "utf8");
-    if (!content.replace(/^\uFEFF/, "").trim()) {
-      console.error(
-        `duet: both the description and the content of Drive file ${file.id} are empty. ` +
-          "Ask your Duet coordinator to write its session id into the file's description.",
-      );
-      return null;
-    }
-    return { id: parseId(content, `Drive file ${file.id}`), source: "gws (Google Drive, file content)" };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// On macOS, gws keeps the key for credentials.enc in the default (login) keychain. When gws
-// runs while that keychain is locked (for example over SSH, or from a job outside the
-// logged-in session), it treats credentials.enc as undecryptable, deletes it, and falls back
-// to gcloud's Application Default Credentials, which have no Drive scope. So gws is not run then.
-// `security show-keychain-info` is not used for this check: on a locked keychain it opens an
-// unlock dialog and waits. SecKeychainGetStatus only reads the state and never prompts.
-// Returns true only when the keychain is known to be locked; on any doubt it returns false
-// and duet-send behaves as before.
-const kSecUnlockStateStatus = 1;
-
-function macKeychainLocked(): boolean {
-  if (process.platform !== "darwin") return false;
-  try {
-    const sec = dlopen("/System/Library/Frameworks/Security.framework/Security", {
-      SecKeychainCopyDefault: { args: [FFIType.ptr], returns: FFIType.i32 },
-      SecKeychainGetStatus: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    });
-    const cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
-      CFRelease: { args: [FFIType.ptr], returns: FFIType.void },
-    });
-    try {
-      const ref = new BigUint64Array(1);
-      if (sec.symbols.SecKeychainCopyDefault(ptr(ref)) !== 0 || ref[0] === 0n) return false;
-      const keychain = Number(ref[0]);
-      try {
-        const status = new Uint32Array(1);
-        if (sec.symbols.SecKeychainGetStatus(keychain, ptr(status)) !== 0) return false;
-        return (status[0] & kSecUnlockStateStatus) === 0;
-      } finally {
-        cf.symbols.CFRelease(keychain);
-      }
-    } finally {
-      sec.close();
-      cf.close();
-    }
-  } catch {
-    return false;
-  }
-}
-
-async function resolveSessionId(): Promise<{ id: string; source: string }> {
-  const gws = process.env.DUET_GWS_BIN ?? Bun.which("gws");
+// `route` is the route name to use (default route when omitted). For a later --to option:
+// when a route name is given, falling back to DUET_SESSION_ID must not happen.
+async function resolveSessionId(route?: string): Promise<Resolved> {
   const direct = process.env.DUET_SESSION_ID?.trim();
+  const fileId = process.env.DUET_ROUTES_FILE_ID?.trim();
 
-  if (gws && macKeychainLocked()) {
-    if (direct) {
-      console.error("duet: the login keychain is locked, so gws is skipped and DUET_SESSION_ID is used.");
-      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (login keychain locked, gws skipped)" };
-    }
+  if (!fileId) {
+    if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
     fail(
-      "the macOS login keychain is locked, so gws was not run (gws deletes its saved sign-in when it cannot read the keychain). " +
-        "Unlock the keychain and try again: log in to this Mac, or run `security unlock-keychain` in this session. " +
-        "Over SSH or in a background job, set DUET_SESSION_ID instead.",
+      "no destination: set DUET_ROUTES_FILE_ID to the Drive file id of your routes file (see the setup guide), or set DUET_SESSION_ID.",
     );
   }
+  if (!FILE_ID_PATTERN.test(fileId)) fail("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
 
-  if (gws) {
-    const viaGws = await readViaGws(gws);
-    if (viaGws) return viaGws;
+  const source = driveTitleRoutesSource(fileId);
+  let routes;
+  try {
+    routes = await loadRoutes(source);
+  } catch (e) {
+    if (!(e instanceof RoutesError)) throw e;
+    if (direct && route === undefined) {
+      console.error(`duet: ${maskIdsIn(e.message).replace(/\.$/, "")}; using DUET_SESSION_ID instead.`);
+      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes file unreadable)" };
+    }
+    fail(maskIdsIn(e.message));
   }
-
-  if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
-
-  if (gws) fail("could not get the session id: gws failed (see above).");
-  fail("gws (Google Workspace CLI) was not found. Install it (see the setup guide), set DUET_GWS_BIN, or set DUET_SESSION_ID.");
+  try {
+    const r = resolveRoute(routes, route);
+    return { id: r.id, source: source.label, route: r.name, updatedAt: routes.updatedAt };
+  } catch (e) {
+    if (e instanceof RoutesError) fail(maskIdsIn(e.message));
+    throw e;
+  }
 }
 
 // ---------- claude CLI ----------
@@ -459,13 +267,16 @@ const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
 const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
 const message = `${tag} ${text}`;
 
-const { id, source } = await resolveSessionId();
+const { id, source, route, updatedAt } = await resolveSessionId();
 // Checked before the dry run too, so a dry run fails the same way a real send would.
 const claude = resolveClaude();
 const shownId = args.verbose ? id : maskId(id);
+const shownTo = route ? `${route} (${shownId})` : shownId;
 
 if (args.dryRun) {
-  console.log(`to: ${shownId}\n(read from: ${source})\nclaude: ${claude}\nmessage:\n${message}`);
+  console.log(
+    `to: ${shownTo}\n(read from: ${source})\n${updatedAt ? `updated: ${updatedAt}\n` : ""}claude: ${claude}\nmessage:\n${message}`,
+  );
   exit(0);
 }
 
@@ -495,6 +306,6 @@ const detail = args.verbose ? raw : maskIdsIn(raw);
 console.error(`duet: sending failed (exit ${code})\n${detail}`);
 await notifyDiscord(
   `duet-send: sending to Claude Duet failed (exit ${code}). The coordinator's session id may have changed.\n` +
-    `to: ${maskId(id)}\n\`\`\`\n${maskIdsIn(raw)}\n\`\`\``,
+    `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${maskIdsIn(raw)}\n\`\`\``,
 );
 exit(1);

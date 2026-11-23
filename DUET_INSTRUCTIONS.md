@@ -6,16 +6,13 @@ duet-send is unofficial. Some of the steps below (`get_session`, how routines be
 
 ## What duet-send needs from you
 
-duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in the **description** of one plain-text file in the user's Google Drive:
+duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in a **routes table**: one line of JSON that is the **file name** (title) of one file in the user's Google Drive.
 
-- File name: `duet-coordinator-session-id.txt` (exactly this name)
-- Location: the root of the user's **My Drive** (not a subfolder, not a shared drive)
-- Description (the file's Drive `description` metadata): your session id and nothing else (for example `session_...`). This is what duet-send reads.
-- Content: your session id at the time you created the file. You don't need to keep it current.
-
-The id goes in the description because the Google Drive connector's update tool can change a file's description but not its content, so you can rewrite the description yourself whenever your id changes.
-
-duet-send reads the description through the Google Workspace CLI (`gws`), which finds the file by name in the root of the user's own My Drive. Only when the description is empty does it read the content, so files set up before this method keep working until you fill in the description. Keep exactly one such file.
+- The table: `{"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"<your session id>"}}`. Use straight quotes, no line breaks, and set `updated_at` to now in UTC (ISO 8601).
+- `main` is you, the coordinator. `default` names the route duet-send uses when none is chosen. Add other routes only when the user asks.
+- The file is shared as **Anyone with the link** with the **Viewer** role. duet-send reads only the file's name through Google's public download link, with no sign-in. The file's content is a dummy and is ignored.
+- The name is used because the Google Drive connector can change a file's name (and description) but not its content.
+- duet-send reads the name from its first `{` to its last `}`, so an extension such as `.json` after the JSON is fine. Nothing else may be in the name.
 
 ## Setup steps
 
@@ -27,36 +24,45 @@ Call `get_session` from the `claude-code-remote` tools **with no `session_id` ar
 
 Don't use an id from your memory, an old message or this repository: it may belong to a session that no longer exists. Always read it fresh with `get_session`.
 
-### 2. Write the id file to Google Drive (ask first)
+### 2. Create the routes file (ask first)
 
-1. Search the user's Drive for a file named `duet-coordinator-session-id.txt`.
-2. Ask the user in one line before writing, for example: "Should I create duet-coordinator-session-id.txt in the root of your My Drive with my current session id? duet-send reads it to find me." If a file with that name already exists, say so and ask whether to overwrite it instead of creating a second one.
-3. On their yes, create the file in the My Drive root (parent `root`), as plain text (`text/plain`, with conversion to a Google Docs type turned off), containing only the id. Use the Google Drive connector's create tool.
-4. Then set the file's **description** to the id alone, with the connector's update tool on the new file's id (its `description` field). The create tool can't set a description itself. If the file already existed, skip step 3 and only set its description.
-5. Note the **Drive file id** of the file.
+1. Search the user's Drive for an existing routes file (a file whose name starts with `{"version":1`) and for a folder named `duet-send`. If either exists, say so and ask whether to reuse it (rename the routes file as in "On every session start") instead of creating a second one.
+2. Ask the user in one line before writing, for example: "Should I create a duet-send folder in your Google Drive, with a small file whose name holds my current session id and a README that explains the folder? duet-send reads the file to find me. You would share only that file, as Anyone with the link, Viewer only."
+3. On their yes, with the Google Drive connector's create tool:
+   1. Create a folder named `duet-send` in the My Drive root (`application/vnd.google-apps.folder`).
+   2. In that folder, create the routes file: a small plain-text file (`text/plain`, with conversion to a Google Docs type turned off) with this content: `duet-send routes: this file's name holds the routes table; don't rename it by hand. See README.md in this folder.` Set its **title** to the one-line JSON above, with your id from step 1.
+   3. In the same folder, create `README.md` (`text/markdown`, with conversion turned off) with the text in "The folder's README" below, exactly as written. It is for the user, when they find the folder and wonder what it is; it is not the repository's README.
 
-If no Google Drive connector is connected, offer to connect one. If the user would rather not, write the id into a file named `duet-coordinator-session-id.txt` in your project folder, attach it to your message, and ask the user to upload it to the root of their My Drive themselves. duet-send then reads its content, and the user has to replace the file by hand each time your id changes.
+   The create tool sets a file's content only when it creates the file; you can't change the content afterwards (only the name and description). So write the README right the first time, and keep the routes table in the routes file's name, not its content.
+4. Note the **Drive file id** of the routes file.
 
-**Don't put the session id in a chat message.** Chat posts may strip or alter session ids. Deliver the id only through the Drive file or an attached file. The Drive file id is fine to show in chat.
+If no Google Drive connector is connected, offer to connect one. Without it you can't keep the table current; the user can still use `DUET_SESSION_ID` by hand, which goes stale when you change.
 
-### 3. Remember it
+### 3. Ask the user to share it (Viewer only)
+
+You don't change sharing yourself. Ask the user to open the routes file (not the folder) in Google Drive, choose **Share → General access → Anyone with the link**, and set the role to **Viewer**. Stress this:
+
+- Never **Editor** or **Commenter**. Anyone who can edit the file can rename it, and so redirect the user's messages.
+- Never add you or anyone else as an editor for this purpose.
+
+### 4. Tell the user the Drive file id
+
+Tell them the Drive file id (the part after `/d/` in the file's link, or the `id=` value) and that they put it in the `DUET_ROUTES_FILE_ID` environment variable. It is fine to show the file id in chat. Still **never put a session id in a chat message**: chat posts may strip or alter session ids. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install.
+
+### 5. Remember it
 
 Write these to your project memory, near the top so every new coordinator session sees them on start:
 
 - That duet-send is set up for this user, with a link to this repository
 - Your current session id (as of today's date)
-- The Drive file id of `duet-coordinator-session-id.txt`
+- The Drive file id of the routes file
 - The instruction from "On every session start" below, marked to be done first in every new session
 
 These are records, not permissions: writing to Drive still needs the user's yes each time unless your own rules allow otherwise.
 
-### 4. Tell the user the Drive file id
+### 6. Offer the hourly wake signal (ask; create only on yes)
 
-Tell them the Drive file id and that they can put it in the `DUET_DRIVE_FILE_ID` environment variable if they use `gws`. It is optional: without it, duet-send finds the file by name. Then point them to [docs/setup-guide.md](docs/setup-guide.md) and suggest they hand the repository link to Claude Code on their computer to do the install. duet-send needs `gws` on their computer, because only the Drive API can read a file's description.
-
-### 5. Offer the hourly wake signal (ask; create only on yes)
-
-When you are replaced, the new coordinator only notices on its first turn, and duet-send keeps sending to the old, archived id until then. A small routine can shorten that gap by waking you once an hour. Ask the user in one line whether they want it, for example: "Should I set up an hourly signal that wakes me to check my session id, so the Drive file gets updated within about an hour of a change?"
+When you are replaced, the new coordinator only notices on its first turn, and duet-send keeps sending to the old, archived id until then. A small routine can shorten that gap by waking you once an hour. Ask the user in one line whether they want it, for example: "Should I set up an hourly signal that wakes me to check my session id, so the routes file gets updated within about an hour of a change?"
 
 **The routine must not check the id itself.** A scheduled routine run has neither `get_session` nor `get_channel_session_id`: they are not in its tools, and a tool search doesn't find them. A routine that is told to call `get_session` and "post nothing otherwise" therefore fails silently, and the id goes stale without anyone noticing. So the routine only posts a fixed line, and the check runs in your own coordinator session, which does have `get_session`.
 
@@ -71,15 +77,49 @@ Then add to your project memory, next to the duet-send entry: the exact wake lin
 
 If the user set up the older routine that called `get_session` itself, offer to replace its prompt with the one above (ask first; it's their routine).
 
+### The folder's README
+
+Create `README.md` in the `duet-send` folder with this text. Don't fill in ids or change it per user.
+
+```markdown
+# duet-send
+
+English | 日本語 below
+
+This folder is used by **duet-send**, a small tool that sends messages from your own computer to your Claude Duet coordinator. Your coordinator created it.
+
+- The file whose name starts with `{"version":1` is the **routes table**. Its name (not its content) holds the coordinator's current session id, written as one line of JSON. The coordinator renames the file whenever its session id changes. It uses the name because Claude's Google Drive connector can rename a file but can't change its content.
+- duet-send on your computer reads that name through the file's "Anyone with the link" share.
+- **Share the routes file as Viewer only.** Anyone who can edit it could rename it and redirect your messages. Keep its link to yourself: whoever has it can see the route names and session ids, and the owner's Google account name and email address. They still can't send to your sessions.
+- **Don't rename, move to the trash or replace the routes file.** duet-send then can't find your coordinator. A new file gets a new id, which you would have to set again on every computer.
+- Not using duet-send any more? Ask your coordinator to stop updating it, then delete this folder.
+
+More: https://github.com/Stella2211/duet-send
+
+---
+
+# duet-send（日本語）
+
+このフォルダは **duet-send** が使っています。duet-send は、自分のパソコンから Claude Duet のコーディネーターにメッセージを送る小さなツールです。このフォルダはコーディネーターが作りました。
+
+- 名前が `{"version":1` で始まるファイルが **ルーティング表** です。中身ではなく **ファイル名** に、コーディネーターの今のセッションIDが1行の JSON で書いてあります。セッションIDが変わるたびに、コーディネーターがファイル名を書き換えます。ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、中身は変えられないためです。
+- パソコンの duet-send は、このファイルの「リンクを知っている全員」の共有を通してファイル名を読みます。
+- **ルーティング表のファイルは「閲覧者」でだけ共有してください。** 編集できる人は、ファイル名を変えてメッセージの届け先を変えられます。リンクは自分だけで持ってください。リンクを知っている人には、ルート名とセッションID、持ち主の Google アカウントの名前とメールアドレスが見えます（ただし、あなたのセッションに送ることはできません）。
+- **ルーティング表のファイルの名前を変えたり、ゴミ箱に入れたり、作り直したりしないでください。** duet-send がコーディネーターを見つけられなくなります。作り直したファイルはIDが変わるので、すべてのパソコンで設定し直すことになります。
+- duet-send を使わなくなったら、コーディネーターに更新をやめるよう伝えてから、このフォルダを削除してください。
+
+詳しくは: https://github.com/Stella2211/duet-send
+```
+
 ## On every session start
 
 Do this as the **first thing** each time you start as a new coordinator session, and each time the hourly wake line arrives:
 
 1. Call `get_session` with no `session_id` and compare the id with the one in memory.
 2. If it is the same, do nothing and say nothing about it.
-3. If it differs, update the id in memory right away (and in any other place you keep it, such as a notes file in your project folder). Then rewrite the Drive file's description: call the Google Drive connector's update tool on **the same Drive file** (by its recorded Drive file id) with `description` set to the new id alone. Leave the content as it is. Don't create a new file; that would give it a new Drive file id, break `DUET_DRIVE_FILE_ID` and leave two files with the same name.
+3. If it differs, update the id in memory right away (and in any other place you keep it). Then rename **the same file** (by its recorded Drive file id) with the Google Drive connector's update tool: set `title` to the new one-line JSON (the `main` route with the new id, other routes unchanged, straight quotes, `updated_at` refreshed). Leave the content as it is. Then read the file's metadata back and check that the part of the title from its first `{` to its last `}` parses as JSON and holds the new id (Drive may add an extension such as `.json` after it). **Never create a new file**: that would change the Drive file id the user configured.
 
-Ask the user in one line before that Drive update, for example: "My session id changed; should I update the description of duet-coordinator-session-id.txt in your Drive so duet-send can reach me?", unless they have told you that you may update it without asking. Record such a permission in memory in their own words, so the next coordinator session knows it too.
+Ask the user in one line before that rename, for example: "My session id changed; should I update the name of the routes file in your Drive so duet-send can reach me?", unless they have told you that you may do it without asking. Record such a permission in memory in their own words, so the next coordinator session knows it too.
 
 When the hourly wake line arrives, run this check and don't relay the line to the user. If the id is unchanged, end your turn without replying. If `get_session` fails, tell the user in one line that you couldn't check your session id, instead of staying silent.
 
@@ -96,8 +136,8 @@ Messages sent with duet-send arrive as ordinary user turns with **no sender info
 ## Troubleshooting for you
 
 - **`get_session` isn't in your tools:** search for it in your deferred tools. If it isn't available, tell the user you can't read your session id here, and that duet-send can still be used with `DUET_SESSION_ID` set by hand, although it goes stale when the coordinator changes.
-- **The user says duet-send reports "archived" or "Session not found":** run the session-start check above.
-- **The id went stale even though the hourly routine exists:** read the routine's prompt. If it tells the routine to call `get_session` (the older design), it has been failing silently, because routine runs don't have that tool. Offer to replace it with the wake-line prompt in step 5.
-- **The user reports "does not contain a session id":** the description (or, if the description is empty, the content) has something other than an id. Ask, then set the description to your current id alone.
-- **The user reports "both the description and the content ... are empty":** set the description to your current id (ask first).
-- **The user's dry run says `read from: ... (file content)`:** the description is empty, so duet-send fell back to the content. Set the description to your current id (ask first).
+- **The user says duet-send reports "archived" or "Session not found":** the id is stale. Run the session-start check above.
+- **The id went stale even though the hourly routine exists:** read the routine's prompt. If it tells the routine to call `get_session` (the older design), it has been failing silently, because routine runs don't have that tool. Offer to replace it with the wake-line prompt in step 6.
+- **The user reports a sign-in page, "Google returned a web page instead of the routes file" or "Check the file id, and that the file is shared as "Anyone with the link"":** the file isn't shared by link, or the id is wrong. Ask them to set sharing to Anyone with the link, Viewer, and check the file id against your memory.
+- **The user reports "is not valid JSON":** someone may have renamed the file by hand, or the name is cut off. Read the file's metadata, and after asking, rename it again with a valid one-line JSON (straight quotes). Drive may show the long name oddly; that is expected.
+- **The user reports "unknown route" or "unsupported routes version":** the table has a name that isn't in it, or a version duet-send doesn't know. Ask, then rewrite the table (`"version":1`, `default` naming a route in `routes`).
