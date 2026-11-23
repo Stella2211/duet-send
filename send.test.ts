@@ -4,14 +4,14 @@ const SEND = new URL("./send.ts", import.meta.url).pathname;
 const MAX_LEN = 8000;
 const TAG = "[Claude Code: Stop] ";
 
-// Runs `send.ts --hook --dry-run` with a hook JSON on stdin. gws is turned off and a
+// Runs `send.ts --hook --dry-run` with a hook JSON on stdin. the routes file is unset and a
 // dummy session id is used, so nothing is read from Drive and nothing is sent.
 async function hookDryRun(input: object): Promise<string> {
   const proc = Bun.spawn(["bun", SEND, "--hook", "--dry-run"], {
     stdin: new Blob([JSON.stringify(input)]),
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_GWS_BIN: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: "claude", DUET_HOOK: "" },
+    env: { ...process.env, DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: "claude", DUET_HOOK: "" },
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
@@ -67,4 +67,29 @@ describe("--hook: the last message", () => {
       expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)).toBe(false);
     });
   }
+});
+
+// Runs `send.ts --dry-run` with the given env overrides and returns the result.
+async function dryRun(env: Record<string, string>) {
+  const proc = Bun.spawn(["bun", SEND, "--dry-run", "hi"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, DUET_CLAUDE_BIN: "claude", DUET_HOOK: "", ...env },
+  });
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { out, err, code: await proc.exited };
+}
+
+describe("destination", () => {
+  test("no routes file and no DUET_SESSION_ID fails", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "" });
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("no destination: set DUET_ROUTES_FILE_ID");
+  });
+  test("an invalid DUET_ROUTES_FILE_ID fails", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "a/b", DUET_SESSION_ID: "session_test0123456789" });
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("DUET_ROUTES_FILE_ID does not look like a Drive file id");
+  });
 });
