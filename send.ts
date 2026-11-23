@@ -17,6 +17,7 @@
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
+import { statSync } from "node:fs";
 import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
 const MAX_LEN = 8000;
@@ -140,18 +141,36 @@ async function resolveSessionId(route?: string): Promise<Resolved> {
 }
 
 // ---------- claude CLI ----------
-function resolveClaude(): string {
-  const bin = process.env.DUET_CLAUDE_BIN ?? Bun.which("claude");
-  if (!bin) fail("claude was not found (check PATH or set DUET_CLAUDE_BIN)");
+// Returns the path to claude, or the reason it can't be started.
+function resolveClaude(): { bin: string } | { error: string; path?: string } {
+  const env = process.env.DUET_CLAUDE_BIN;
+  let bin: string | null | undefined;
+  if (env && /[\\/]/.test(env)) {
+    // A path: it has to be an existing file.
+    let isFile = false;
+    try {
+      isFile = statSync(env).isFile();
+    } catch {
+      // missing or unreadable
+    }
+    if (!isFile) return { error: `claude was not found at DUET_CLAUDE_BIN (${env})`, path: env };
+    bin = env;
+  } else {
+    // A bare command name (or nothing set): look it up on PATH.
+    bin = Bun.which(env || "claude");
+    if (!bin) return { error: "claude was not found (check PATH or set DUET_CLAUDE_BIN)" };
+  }
   // npm's claude.cmd can only be started through cmd.exe, which could mangle the
   // message or interpret it as a command, so it is refused.
   if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) {
-    fail(
-      `${bin} is a .cmd file and cannot be called safely. Install the native Claude Code (claude.exe) ` +
+    return {
+      error:
+        `${bin} is a .cmd file and cannot be called safely. Install the native Claude Code (claude.exe) ` +
         "or point DUET_CLAUDE_BIN to claude.exe.",
-    );
+      path: bin,
+    };
   }
-  return bin;
+  return { bin };
 }
 
 function sanitize(text: string): string {
@@ -277,9 +296,26 @@ const message = `${tag} ${text}`;
 
 const { id, source, route, updatedAt } = await resolveSessionId(args.to);
 // Checked before the dry run too, so a dry run fails the same way a real send would.
-const claude = resolveClaude();
+const resolved = resolveClaude();
 const shownId = args.verbose ? id : maskId(id);
 const shownTo = route ? `${route} (${shownId})` : shownId;
+
+// Claude Code can't be started: print the reason, alert Discord (not on a dry run), then fail.
+// The Discord alert names only the file, not its full path (which would include your user name).
+async function cannotStart(reason: string, path?: string): Promise<never> {
+  const safe = maskIdsIn(reason);
+  console.error(`duet: ${safe}`);
+  if (!args.dryRun) {
+    const shown = path ? safe.split(path).join(path.split(/[\\/]/).filter(Boolean).pop() ?? "") : safe;
+    await notifyDiscord(
+      `duet-send: could not start Claude Code.\n` +
+        `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${shown}\n\`\`\``,
+    );
+  }
+  return exit(1);
+}
+if ("error" in resolved) await cannotStart(resolved.error, resolved.path);
+const claude = (resolved as { bin: string }).bin;
 
 if (args.dryRun) {
   console.log(
@@ -288,13 +324,18 @@ if (args.dryRun) {
   exit(0);
 }
 
-const proc = Bun.spawn([claude, "-p", message, "--cloud", id], {
-  stdout: "pipe",
-  stderr: "pipe",
-  stdin: "ignore",
-  // Marks this claude process, so a Stop hook running duet-send --hook skips it.
-  env: { ...process.env, DUET_HOOK: "1" },
-});
+let proc: ReturnType<typeof Bun.spawn<{ stdout: "pipe"; stderr: "pipe"; stdin: "ignore" }>>;
+try {
+  proc = Bun.spawn([claude, "-p", message, "--cloud", id], {
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+    // Marks this claude process, so a Stop hook running duet-send --hook skips it.
+    env: { ...process.env, DUET_HOOK: "1" },
+  });
+} catch (e) {
+  await cannotStart(`could not start claude (${claude}): ${e instanceof Error ? e.message : String(e)}`, claude);
+}
 children.add(proc);
 const [stdout, stderr, code] = await Promise.all([
   new Response(proc.stdout).text(),

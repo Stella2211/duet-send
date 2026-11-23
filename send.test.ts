@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const SEND = new URL("./send.ts", import.meta.url).pathname;
 const MAX_LEN = 8000;
@@ -11,7 +14,7 @@ async function hookDryRun(input: object): Promise<string> {
     stdin: new Blob([JSON.stringify(input)]),
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: "claude", DUET_HOOK: "" },
+    env: { ...process.env, DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: process.execPath, DUET_HOOK: "" },
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
@@ -75,7 +78,7 @@ async function dryRun(env: Record<string, string>, extra: string[] = []) {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_CLAUDE_BIN: "claude", DUET_HOOK: "", ...env },
+    env: { ...process.env, DUET_CLAUDE_BIN: process.execPath, DUET_HOOK: "", ...env },
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { out, err, code: await proc.exited };
@@ -102,5 +105,86 @@ describe("destination", () => {
     const r = await dryRun({ DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789" }, ["--to", " "]);
     expect(r.code).not.toBe(0);
     expect(r.err).toContain("--to needs a route name");
+  });
+});
+
+// ---------- claude can't be started ----------
+// A fake Discord webhook records the POST bodies. No real claude is ever started: the
+// destination is a dummy session id and DUET_CLAUDE_BIN is missing or not executable.
+const FULL_ID = "session_test0123456789";
+
+async function runNoClaude(bin: string, extra: string[]) {
+  const posts: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      posts.push(await req.text());
+      return new Response(null, { status: 204 });
+    },
+  });
+  try {
+    const hook = extra.includes("--hook");
+    const proc = Bun.spawn(["bun", SEND, ...extra, ...(hook ? [] : ["hi"])], {
+      stdin: hook ? new Blob([JSON.stringify({ hook_event_name: "Stop", cwd: "/tmp/t", last_assistant_message: "x" })]) : "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        DUET_ROUTES_FILE_ID: "",
+        DUET_SESSION_ID: FULL_ID,
+        DUET_CLAUDE_BIN: bin,
+        DUET_HOOK: "",
+        DUET_DISCORD_WEBHOOK: `http://127.0.0.1:${server.port}/hook`,
+      },
+    });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { out, err, code: await proc.exited, posts };
+  } finally {
+    await server.stop(true);
+  }
+}
+
+describe("claude can't be started", () => {
+  const missing = "/nonexistent/claude";
+
+  test("--hook: exit 0, stderr says why, one Discord alert without the full id", async () => {
+    const r = await runNoClaude(missing, ["--hook"]);
+    expect(r.code).toBe(0);
+    expect(r.err).toContain("duet: claude was not found");
+    expect(r.err).toContain(missing);
+    expect(r.posts.length).toBe(1);
+    const content = JSON.parse(r.posts[0]).content as string;
+    expect(content).toContain("could not start Claude Code");
+    expect(content).not.toContain(FULL_ID);
+  });
+
+  test("without --hook: exit 1, one Discord alert", async () => {
+    const r = await runNoClaude(missing, []);
+    expect(r.code).toBe(1);
+    expect(r.posts.length).toBe(1);
+    expect(JSON.parse(r.posts[0]).content).not.toContain(FULL_ID);
+  });
+
+  test("--dry-run: fails and posts nothing", async () => {
+    const r = await runNoClaude(missing, ["--dry-run"]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("claude was not found");
+    expect(r.posts.length).toBe(0);
+  });
+
+  test.skipIf(process.platform === "win32")("a file that isn't executable: --hook exits 0, one alert", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "duet-send-test-"));
+    try {
+      const file = join(dir, "claude");
+      writeFileSync(file, "#!/bin/sh\nexit 0\n");
+      chmodSync(file, 0o644);
+      const r = await runNoClaude(file, ["--hook"]);
+      expect(r.code).toBe(0);
+      expect(r.err).toContain("could not start claude");
+      expect(r.posts.length).toBe(1);
+      expect(JSON.parse(r.posts[0]).content).not.toContain(FULL_ID);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

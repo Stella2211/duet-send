@@ -99,7 +99,7 @@ duet-send は `https://drive.google.com/uc?export=download&id=<FILE_ID>` にサ�
 | `DUET_ROUTES_FILE_ID` | ルーティング表のファイルの Drive ID（ファイルのリンクの `/d/` の後ろの部分、または `id=` の値）。コーディネーターが教えてくれます。 |
 | `DUET_SESSION_ID` | セッションIDそのもの。`DUET_ROUTES_FILE_ID` がないときに使い、ルーティング表のファイルを読めないときも代わりに使います（警告が出ます）。コーディネーターが変わると古くなります。 |
 | `DUET_TAG` | メッセージの先頭に付ける既定のタグ。既定値は `[Claude Code]` です。`--hook` では使われず、hook のタグは `[Claude Code: Stop]` です。変えるときは `--tag` を使います。 |
-| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済みのときなどが対象です。通知されず stderr に出るだけなのは、ルーティング表のファイルを読めなかったとき、`claude` が見つからないとき、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
+| `DUET_DISCORD_WEBHOOK` | 送信そのもの（`claude -p ... --cloud`）に失敗したときに知らせる Discord の Webhook URL。IDが古い・アーカイブ済みのときや、Claude Code を起動できないとき（`claude` が見つからない、起動に失敗する）も対象です。通知されず stderr に出るだけなのは、ルーティング表のファイルを読めなかったとき、本文が長すぎるとき、hook の60秒タイムアウトです。通知の中のIDは短くして送ります。 |
 | `DUET_CLAUDE_BIN` | `claude` のフルパス。Windows では `claude.exe` を指定します。定期実行では設定してください。 |
 | `DUET_HOOK` | `1` のとき、`--hook` は何もしません。duet-send は自分が起動する `claude` にこれを付けるので、自分の送信で hook が動くことはありません。 |
 
