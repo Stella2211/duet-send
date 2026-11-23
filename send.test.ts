@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -183,6 +183,27 @@ describe("claude can't be started", () => {
       expect(r.err).toContain("could not start claude");
       expect(r.posts.length).toBe(1);
       expect(JSON.parse(r.posts[0]).content).not.toContain(FULL_ID);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  test.skipIf(process.platform === "win32")("the alert names only the file, even when the path looks like an id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "duet-send-test-"));
+    try {
+      const sub = join(dir, "cse_student01", "bin");
+      mkdirSync(sub, { recursive: true });
+      const file = join(sub, "claude");
+      writeFileSync(file, "#!/bin/sh\nexit 0\n");
+      chmodSync(file, 0o644);
+      for (const bin of [file, join(dir, "cse_student01", "bin", "missing")]) {
+        const r = await runNoClaude(bin, ["--hook"]);
+        expect(r.code).toBe(0);
+        expect(r.posts.length).toBe(1);
+        const content = JSON.parse(r.posts[0]).content as string;
+        expect(content).not.toContain(dir);
+        expect(content).not.toContain("cse_");
+        expect(content).not.toContain("/bin/");
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

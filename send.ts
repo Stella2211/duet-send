@@ -146,14 +146,17 @@ function resolveClaude(): { bin: string } | { error: string; path?: string } {
   const env = process.env.DUET_CLAUDE_BIN;
   let bin: string | null | undefined;
   if (env && /[\\/]/.test(env)) {
-    // A path: it has to be an existing file.
-    let isFile = false;
-    try {
-      isFile = statSync(env).isFile();
-    } catch {
-      // missing or unreadable
-    }
-    if (!isFile) return { error: `claude was not found at DUET_CLAUDE_BIN (${env})`, path: env };
+    // A path: it has to be an existing file. On Windows, "...\\claude" also finds claude.exe,
+    // as starting it would.
+    const isFile = (p: string) => {
+      try {
+        return statSync(p).isFile();
+      } catch {
+        return false; // missing or unreadable
+      }
+    };
+    const found = isFile(env) || (process.platform === "win32" && !/\.[^\\/.]+$/.test(env) && isFile(`${env}.exe`));
+    if (!found) return { error: `claude was not found at DUET_CLAUDE_BIN (${env})`, path: env };
     bin = env;
   } else {
     // A bare command name (or nothing set): look it up on PATH.
@@ -306,7 +309,9 @@ async function cannotStart(reason: string, path?: string): Promise<never> {
   const safe = maskIdsIn(reason);
   console.error(`duet: ${safe}`);
   if (!args.dryRun) {
-    const shown = path ? safe.split(path).join(path.split(/[\\/]/).filter(Boolean).pop() ?? "") : safe;
+    // The path is cut to its file name before ids are masked, so masking can't hide it from the swap.
+    const short = path ? reason.split(path).join(path.split(/[\\/]/).filter(Boolean).pop() ?? "") : reason;
+    const shown = maskIdsIn(short);
     await notifyDiscord(
       `duet-send: could not start Claude Code.\n` +
         `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${shown}\n\`\`\``,
