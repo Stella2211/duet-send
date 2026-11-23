@@ -1,4 +1,4 @@
-// Routes table: a small public JSON document that maps route names to session ids.
+// Routes table: a small JSON object that maps route names to session ids.
 //   {"version":1,"updated_at":"...","default":"main","routes":{"main":"session_...","work":"session_..."}}
 
 export class RoutesError extends Error {}
@@ -18,9 +18,7 @@ export function parseRoutes(text: string, where: string): Routes {
   try {
     data = JSON.parse(text.replace(/^\uFEFF/, "").trim());
   } catch {
-    // Typing in Google Docs by hand turns " into curly quotes, which JSON doesn't accept.
-    const hint = /[\u201C\u201D]/.test(text) ? ' (it has curly quotes \u201C\u201D; use straight " quotes)' : "";
-    throw new RoutesError(`${where} is not valid JSON${hint}`);
+    throw new RoutesError(`${where} is not valid JSON`);
   }
   if (!isPlainObject(data)) throw new RoutesError(`${where} must be a JSON object`);
   if (typeof data.version !== "number") throw new RoutesError(`${where} has no numeric "version"`);
@@ -61,30 +59,80 @@ export interface RoutesSource {
   load(signal: AbortSignal): Promise<string>;
 }
 
-// The routes table lives in a Google Docs document shared as "Anyone with the link: Viewer".
-// Its plain-text export can be read without signing in. The coordinator rewrites the body
-// with its Google Docs connector whenever its session id changes.
-export const DOC_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-const DOCS_ORIGIN = "https://docs.google.com";
+// The routes table is the *name* (title) of one file in Google Drive, shared as
+// "Anyone with the link: Viewer". Claude's Google Drive connector can rename a file but
+// can't change its content, so the coordinator keeps the JSON in the name. Google's
+// public download link reports the name in Content-Disposition without any sign-in;
+// the content (a dummy) is never read.
+export const FILE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const DRIVE_ORIGIN = "https://drive.google.com";
+
+// Header values arrive as bytes read one per character; a UTF-8 name (route names in
+// Japanese, for example) is turned back into text here.
+function utf8FromBytes(text: string): string {
+  if (!/[\u0080-ÿ]/.test(text) || /[^\u0000-ÿ]/.test(text)) return text;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+  } catch {
+    return text;
+  }
+}
+
+// Gets the file name out of a Content-Disposition header. filename* (RFC 5987/8187,
+// percent-encoded) wins over filename. Google Drive sends filename="..." without escaping
+// the quotes inside the name, so the quoted value runs to the last quote, not the first.
+export function fileNameFromDisposition(header: string): string | null {
+  const star = /(?:^|;)\s*filename\*\s*=\s*([^']*)'[^']*'([^;]*)/i.exec(header);
+  if (star) {
+    const charset = star[1].trim().toLowerCase();
+    if (charset === "utf-8" || charset === "") {
+      try {
+        return decodeURIComponent(star[2].trim());
+      } catch {}
+    }
+  }
+  const at = /(?:^|;)\s*filename\s*=\s*/i.exec(header);
+  if (!at) return null;
+  let rest = header.slice(at.index + at[0].length);
+  if (!rest.startsWith('"')) return utf8FromBytes(rest.split(";")[0].trim()) || null;
+  rest = rest.slice(1);
+  const nextParam = /";\s*[A-Za-z*-]+\s*=/.exec(rest);
+  const end = nextParam ? nextParam.index : rest.lastIndexOf('"');
+  let value = end >= 0 ? rest.slice(0, end) : rest;
+  // A properly escaped quoted string (no bare quote inside): undo the escapes.
+  if (!/(^|[^\\])"/.test(value)) value = value.replace(/\\(.)/g, "$1");
+  return utf8FromBytes(value);
+}
+
+// Drive keeps an extension on the name (for example "{...}.json"), so only the part
+// from the first "{" to the last "}" is the routes JSON.
+export function routesJsonFromName(name: string): string {
+  const start = name.indexOf("{");
+  const end = name.lastIndexOf("}");
+  return start >= 0 && end > start ? name.slice(start, end + 1) : name;
+}
 
 // `origin` is only for tests (a local stub server).
-export function googleDocsRoutesSource(docId: string, origin = DOCS_ORIGIN): RoutesSource {
-  if (!DOC_ID_PATTERN.test(docId)) throw new RoutesError("the document id does not look like a Google Docs document id");
-  const label = "the routes document (Google Docs)";
+export function driveTitleRoutesSource(fileId: string, origin = DRIVE_ORIGIN): RoutesSource {
+  if (!FILE_ID_PATTERN.test(fileId)) throw new RoutesError("the file id does not look like a Google Drive file id");
+  const label = "the routes file (Google Drive)";
   return {
     label,
     async load(signal: AbortSignal): Promise<string> {
-      const url = `${origin}/document/d/${docId}/export?format=txt`;
-      const res = await fetch(url, { signal, redirect: "follow", headers: { Accept: "text/plain" } });
-      const type = res.headers.get("content-type") ?? "";
-      // A document that isn't shared by link answers with a sign-in page (401, or 200 HTML after a redirect).
-      if (res.status === 401 || res.status === 403 || res.status === 404 || /text\/html/i.test(type)) {
-        throw new RoutesError(
-          `could not read ${label} (HTTP ${res.status}). Check the document id, and that the document is shared as "Anyone with the link" with the Viewer role.`,
-        );
-      }
+      const url = `${origin}/uc?export=download&id=${fileId}`;
+      const res = await fetch(url, { signal, redirect: "follow" });
+      const disposition = res.headers.get("content-disposition");
+      // Only the header is needed; the content is a dummy.
+      await res.body?.cancel().catch(() => {});
+      const notShared =
+        `could not read ${label} (HTTP ${res.status}). Check the file id, and that the file is shared as ` +
+        `"Anyone with the link" with the Viewer role.`;
+      // A file that isn't shared by link ends at a sign-in page (HTML, no file name).
+      if (res.status === 401 || res.status === 403 || res.status === 404) throw new RoutesError(notShared);
       if (!res.ok) throw new RoutesError(`could not read ${label} (HTTP ${res.status})`);
-      return await res.text();
+      const name = disposition ? fileNameFromDisposition(disposition) : null;
+      if (name === null) throw new RoutesError(notShared);
+      return routesJsonFromName(name);
     },
   };
 }

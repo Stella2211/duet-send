@@ -4,14 +4,14 @@ const SEND = new URL("./send.ts", import.meta.url).pathname;
 const MAX_LEN = 8000;
 const TAG = "[Claude Code: Stop] ";
 
-// Runs `send.ts --hook --dry-run` with a hook JSON on stdin. The routes document is unset and a
-// dummy session id is used, so nothing is read from Google Docs and nothing is sent.
+// Runs `send.ts --hook --dry-run` with a hook JSON on stdin. The routes file is unset and a
+// dummy session id is used, so nothing is read from Google Drive and nothing is sent.
 async function hookDryRun(input: object): Promise<string> {
   const proc = Bun.spawn(["bun", SEND, "--hook", "--dry-run"], {
     stdin: new Blob([JSON.stringify(input)]),
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_ROUTES_DOC_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: "claude", DUET_HOOK: "" },
+    env: { ...process.env, DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: "claude", DUET_HOOK: "" },
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
@@ -82,14 +82,14 @@ async function dryRun(env: Record<string, string>) {
 }
 
 describe("destination", () => {
-  test("no routes document and no DUET_SESSION_ID fails", async () => {
-    const r = await dryRun({ DUET_ROUTES_DOC_ID: "", DUET_SESSION_ID: "" });
+  test("no routes file and no DUET_SESSION_ID fails", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "" });
     expect(r.code).not.toBe(0);
-    expect(r.err).toContain("no destination: set DUET_ROUTES_DOC_ID");
+    expect(r.err).toContain("no destination: set DUET_ROUTES_FILE_ID");
   });
-  test("an invalid DUET_ROUTES_DOC_ID fails", async () => {
-    const r = await dryRun({ DUET_ROUTES_DOC_ID: "a/b", DUET_SESSION_ID: "session_test0123456789" });
+  test("an invalid DUET_ROUTES_FILE_ID fails", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "a/b", DUET_SESSION_ID: "session_test0123456789" });
     expect(r.code).not.toBe(0);
-    expect(r.err).toContain("DUET_ROUTES_DOC_ID does not look like a Google Docs document id");
+    expect(r.err).toContain("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
   });
 });

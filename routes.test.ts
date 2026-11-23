@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { RoutesError, googleDocsRoutesSource, loadRoutes, parseRoutes, resolveRoute } from "./routes";
+import { RoutesError, driveTitleRoutesSource, fileNameFromDisposition, loadRoutes, routesJsonFromName, parseRoutes, resolveRoute } from "./routes";
 
 const A = "session_01Abc123";
 const B = "cse_01Xyz789";
@@ -64,49 +64,93 @@ describe("resolveRoute", () => {
   });
 });
 
-describe("googleDocsRoutesSource", () => {
-  const body = '﻿{"version":1,"default":"main","routes":{"main":"session_abc0123456789"}}\r\n';
+describe("fileNameFromDisposition", () => {
+  const json = '{"version":1,"default":"main","routes":{"仕事":"session_abc"}}';
+  test("filename* (UTF-8, percent-encoded) wins", () => {
+    const h = `attachment; filename="x.json"; filename*=UTF-8''${encodeURIComponent(json)}`;
+    expect(fileNameFromDisposition(h)).toBe(json);
+  });
+  test("a quoted filename with escaped quotes", () => {
+    const h = `attachment; filename="${json.replace(/["\\]/g, "\\$&")}"`;
+    expect(fileNameFromDisposition(h)).toBe(json);
+  });
+  test("Google Drive's unescaped quoted filename, with the extension Drive keeps", () => {
+    const h = `attachment; filename="${json}.json"`;
+    expect(routesJsonFromName(fileNameFromDisposition(h)!)).toBe(json);
+  });
+  test("raw UTF-8 bytes in a quoted filename", () => {
+    const bytes = String.fromCharCode(...new TextEncoder().encode(json));
+    expect(fileNameFromDisposition(`attachment; filename="${bytes}"`)).toBe(json);
+  });
+  test("a token filename", () => {
+    expect(fileNameFromDisposition("attachment; filename=test.md")).toBe("test.md");
+  });
+  test("no filename", () => {
+    expect(fileNameFromDisposition("attachment")).toBeNull();
+  });
+});
+
+describe("driveTitleRoutesSource", () => {
+  const title = '{"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_abc0123456789"}}';
   const server = Bun.serve({
     port: 0,
     fetch(req) {
-      const path = new URL(req.url).pathname;
-      if (path === "/document/d/public/export") return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8" } });
-      if (path === "/document/d/redirected/export") return Response.redirect("/signin", 302);
-      if (path === "/signin") return new Response("<!doctype html><html></html>", { headers: { "content-type": "text/html; charset=utf-8" } });
-      if (path === "/document/d/private/export") return new Response("<!DOCTYPE html>", { status: 401, headers: { "content-type": "text/html" } });
-      if (path === "/document/d/broken/export") return new Response("oops", { status: 500, headers: { "content-type": "text/plain" } });
-      if (path === "/document/d/slow/export") return new Promise((r) => setTimeout(() => r(new Response(body)), 3000));
-      if (path === "/document/d/curly/export") return new Response('{“version”:1}', { headers: { "content-type": "text/plain" } });
-      return new Response("not found", { status: 404, headers: { "content-type": "text/html" } });
+      const url = new URL(req.url);
+      const id = url.searchParams.get("id");
+      if (url.pathname === "/download") {
+        return new Response("dummy content", {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-disposition": url.searchParams.get("id") === "star"
+              ? `attachment; filename="routes.json"; filename*=UTF-8''${encodeURIComponent(title)}`
+              : `attachment; filename="${title}.json"`,
+          },
+        });
+      }
+      if (url.pathname === "/signin") return new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+      if (url.pathname !== "/uc") return new Response("nope", { status: 404 });
+      if (id === "public" || id === "star") return Response.redirect(`/download?id=${id}`, 303);
+      if (id === "private") return Response.redirect("/signin", 302);
+      if (id === "gone") return new Response("<!doctype html>", { status: 404, headers: { "content-type": "text/html" } });
+      if (id === "broken") return new Response("oops", { status: 500 });
+      if (id === "slow") return new Promise((r) => setTimeout(() => r(new Response("x")), 3000));
+      if (id === "renamed") return new Response("x", { headers: { "content-disposition": 'attachment; filename="my notes.txt"' } });
+      return new Response("nope", { status: 404 });
     },
   });
   const origin = `http://localhost:${server.port}`;
   afterAll(() => server.stop(true));
 
-  test("reads and parses a public document (BOM and CRLF removed)", async () => {
-    const r = await loadRoutes(googleDocsRoutesSource("public", origin));
+  test("reads the routes from the file name of a public file", async () => {
+    const r = await loadRoutes(driveTitleRoutesSource("public", origin));
+    expect(r.updatedAt).toBe("2026-11-23T03:30:00Z");
     expect(resolveRoute(r)).toEqual({ name: "main", id: "session_abc0123456789" });
   });
 
-  for (const id of ["private", "redirected", "missing"]) {
-    test(`a document that isn't shared by link (${id}) explains the sharing setting`, async () => {
-      await expect(loadRoutes(googleDocsRoutesSource(id, origin))).rejects.toThrow(/Anyone with the link/);
+  test("also reads a filename* header", async () => {
+    const r = await loadRoutes(driveTitleRoutesSource("star", origin));
+    expect(resolveRoute(r).id).toBe("session_abc0123456789");
+  });
+
+  for (const id of ["private", "gone"]) {
+    test(`a file that isn't shared by link (${id}) explains the sharing setting`, async () => {
+      await expect(loadRoutes(driveTitleRoutesSource(id, origin))).rejects.toThrow(/Anyone with the link/);
     });
   }
 
   test("another HTTP error is reported with its status", async () => {
-    await expect(loadRoutes(googleDocsRoutesSource("broken", origin))).rejects.toThrow(/HTTP 500/);
+    await expect(loadRoutes(driveTitleRoutesSource("broken", origin))).rejects.toThrow(/HTTP 500/);
   });
 
   test("a slow answer times out", async () => {
-    await expect(loadRoutes(googleDocsRoutesSource("slow", origin), 300)).rejects.toThrow(/timed out/);
+    await expect(loadRoutes(driveTitleRoutesSource("slow", origin), 300)).rejects.toThrow(/timed out/);
   });
 
-  test("curly quotes get a hint", async () => {
-    await expect(loadRoutes(googleDocsRoutesSource("curly", origin))).rejects.toThrow(/curly quotes/);
+  test("a file renamed by hand is not valid JSON", async () => {
+    await expect(loadRoutes(driveTitleRoutesSource("renamed", origin))).rejects.toThrow(/not valid JSON/);
   });
 
   test("an id with other characters is refused", () => {
-    expect(() => googleDocsRoutesSource("a/b")).toThrow(RoutesError);
+    expect(() => driveTitleRoutesSource("a/b")).toThrow(RoutesError);
   });
 });

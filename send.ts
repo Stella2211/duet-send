@@ -8,14 +8,14 @@
  *   bun run duet --dry-run "message"   # print the target and body, send nothing
  *   bun /path/to/send.ts --hook         # Claude Code Stop hook: reads the hook JSON on stdin
  *
- * The destination comes from a routes table (JSON mapping route names to session ids) in a
- * Google Docs document shared by link, named by DUET_ROUTES_DOC_ID (see routes.ts). If the
- * document cannot be read, DUET_SESSION_ID (the id itself) is used instead when set.
- * Without DUET_ROUTES_DOC_ID, DUET_SESSION_ID is used.
+ * The destination comes from a routes table (JSON mapping route names to session ids) kept
+ * as the name of a Google Drive file shared by link, named by DUET_ROUTES_FILE_ID (see
+ * routes.ts). If it cannot be read, DUET_SESSION_ID (the id itself) is used instead when set.
+ * Without DUET_ROUTES_FILE_ID, DUET_SESSION_ID is used.
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
-import { DOC_ID_PATTERN, ID_PATTERN, RoutesError, googleDocsRoutesSource, loadRoutes, resolveRoute } from "./routes";
+import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
@@ -100,25 +100,25 @@ type Resolved = { id: string; source: string; route?: string; updatedAt?: string
 // when a route name is given, falling back to DUET_SESSION_ID must not happen.
 async function resolveSessionId(route?: string): Promise<Resolved> {
   const direct = process.env.DUET_SESSION_ID?.trim();
-  const docId = process.env.DUET_ROUTES_DOC_ID?.trim();
+  const fileId = process.env.DUET_ROUTES_FILE_ID?.trim();
 
-  if (!docId) {
+  if (!fileId) {
     if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
     fail(
-      "no destination: set DUET_ROUTES_DOC_ID to the id of your routes document (see the setup guide), or set DUET_SESSION_ID.",
+      "no destination: set DUET_ROUTES_FILE_ID to the Drive file id of your routes file (see the setup guide), or set DUET_SESSION_ID.",
     );
   }
-  if (!DOC_ID_PATTERN.test(docId)) fail("DUET_ROUTES_DOC_ID does not look like a Google Docs document id");
+  if (!FILE_ID_PATTERN.test(fileId)) fail("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
 
-  const source = googleDocsRoutesSource(docId);
+  const source = driveTitleRoutesSource(fileId);
   let routes;
   try {
     routes = await loadRoutes(source);
   } catch (e) {
     if (!(e instanceof RoutesError)) throw e;
     if (direct && route === undefined) {
-      console.error(`duet: could not read the routes document (${e.message}); using DUET_SESSION_ID instead.`);
-      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes document unreadable)" };
+      console.error(`duet: could not read the routes file (${e.message}); using DUET_SESSION_ID instead.`);
+      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes file unreadable)" };
     }
     fail(e.message);
   }
