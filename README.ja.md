@@ -50,7 +50,7 @@ bun run duet "テスト"             # 実際に送る
 
 git がない場合は、リポジトリのページで **Code → Download ZIP** を選び、展開したフォルダでターミナルを開いてください。
 
-macOS、Linux、Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。
+macOS、Linux、Windows それぞれの詳しい手順（定期実行やトラブルシューティングを含む）は [導入ガイド](docs/setup-guide.ja.md) にあります。0.2（gws を使う版）から更新する場合は [0.2（gws）からの移行](docs/setup-guide.ja.md#02gwsからの移行) を見てください。
 
 ## 使い方
 

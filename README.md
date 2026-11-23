@@ -50,7 +50,7 @@ bun run duet "hello"             # sends it
 
 Without git: on the repository page, choose **Code → Download ZIP**, extract it, and open a terminal in the extracted folder.
 
-The full walkthrough for macOS, Linux and Windows, including scheduled runs and troubleshooting, is in the [setup guide](docs/setup-guide.md).
+The full walkthrough for macOS, Linux and Windows, including scheduled runs and troubleshooting, is in the [setup guide](docs/setup-guide.md). Coming from 0.2 (the gws version)? See [Upgrading from 0.2](docs/setup-guide.md#upgrading-from-02-gws).
 
 ## Usage
 

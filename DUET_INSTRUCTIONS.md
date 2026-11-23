@@ -102,10 +102,10 @@ More: https://github.com/Stella2211/duet-send
 
 このフォルダは **duet-send** が使っています。duet-send は、自分のパソコンから Claude Duet のコーディネーターにメッセージを送る小さなツールです。このフォルダはコーディネーターが作りました。
 
-- 名前が `{"version":1` で始まるファイルが **宛先表** です。中身ではなく **ファイル名** に、コーディネーターの今のセッションIDが1行の JSON で書いてあります。セッションIDが変わるたびに、コーディネーターがファイル名を書き換えます。ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、中身は変えられないためです。
+- 名前が `{"version":1` で始まるファイルが **ルーティング表** です。中身ではなく **ファイル名** に、コーディネーターの今のセッションIDが1行の JSON で書いてあります。セッションIDが変わるたびに、コーディネーターがファイル名を書き換えます。ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、中身は変えられないためです。
 - パソコンの duet-send は、このファイルの「リンクを知っている全員」の共有を通してファイル名を読みます。
-- **宛先表のファイルは「閲覧者」でだけ共有してください。** 編集できる人は、ファイル名を変えてメッセージの届け先を変えられます。リンクは自分だけで持ってください。リンクを知っている人には、宛先名とセッションID、持ち主の Google アカウントの名前とメールアドレスが見えます（ただし、あなたのセッションに送ることはできません）。
-- **宛先表のファイルの名前を変えたり、ゴミ箱に入れたり、作り直したりしないでください。** duet-send がコーディネーターを見つけられなくなります。作り直したファイルはIDが変わるので、すべてのパソコンで設定し直すことになります。
+- **ルーティング表のファイルは「閲覧者」でだけ共有してください。** 編集できる人は、ファイル名を変えてメッセージの届け先を変えられます。リンクは自分だけで持ってください。リンクを知っている人には、ルート名とセッションID、持ち主の Google アカウントの名前とメールアドレスが見えます（ただし、あなたのセッションに送ることはできません）。
+- **ルーティング表のファイルの名前を変えたり、ゴミ箱に入れたり、作り直したりしないでください。** duet-send がコーディネーターを見つけられなくなります。作り直したファイルはIDが変わるので、すべてのパソコンで設定し直すことになります。
 - duet-send を使わなくなったら、コーディネーターに更新をやめるよう伝えてから、このフォルダを削除してください。
 
 詳しくは: https://github.com/Stella2211/duet-send
@@ -117,7 +117,7 @@ Do this as the **first thing** each time you start as a new coordinator session,
 
 1. Call `get_session` with no `session_id` and compare the id with the one in memory.
 2. If it is the same, do nothing and say nothing about it.
-3. If it differs, update the id in memory right away (and in any other place you keep it). Then rename **the same file** (by its recorded Drive file id) with the Google Drive connector's update tool: set `title` to the new one-line JSON (the `main` route with the new id, other routes unchanged, straight quotes, `updated_at` refreshed). Leave the content as it is. Then read the file's metadata back and check that the title parses as JSON and holds the new id. **Never create a new file**: that would change the Drive file id the user configured.
+3. If it differs, update the id in memory right away (and in any other place you keep it). Then rename **the same file** (by its recorded Drive file id) with the Google Drive connector's update tool: set `title` to the new one-line JSON (the `main` route with the new id, other routes unchanged, straight quotes, `updated_at` refreshed). Leave the content as it is. Then read the file's metadata back and check that the part of the title from its first `{` to its last `}` parses as JSON and holds the new id (Drive may add an extension such as `.json` after it). **Never create a new file**: that would change the Drive file id the user configured.
 
 Ask the user in one line before that rename, for example: "My session id changed; should I update the name of the routes file in your Drive so duet-send can reach me?", unless they have told you that you may do it without asking. Record such a permission in memory in their own words, so the next coordinator session knows it too.
 
@@ -138,6 +138,6 @@ Messages sent with duet-send arrive as ordinary user turns with **no sender info
 - **`get_session` isn't in your tools:** search for it in your deferred tools. If it isn't available, tell the user you can't read your session id here, and that duet-send can still be used with `DUET_SESSION_ID` set by hand, although it goes stale when the coordinator changes.
 - **The user says duet-send reports "archived" or "Session not found":** the id is stale. Run the session-start check above.
 - **The id went stale even though the hourly routine exists:** read the routine's prompt. If it tells the routine to call `get_session` (the older design), it has been failing silently, because routine runs don't have that tool. Offer to replace it with the wake-line prompt in step 6.
-- **The user reports a sign-in page or "Check the file id, and that the file is shared as Anyone with the link":** the file isn't shared by link, or the id is wrong. Ask them to set sharing to Anyone with the link, Viewer, and check the file id against your memory.
+- **The user reports a sign-in page, "Google returned a web page instead of the routes file" or "Check the file id, and that the file is shared as "Anyone with the link"":** the file isn't shared by link, or the id is wrong. Ask them to set sharing to Anyone with the link, Viewer, and check the file id against your memory.
 - **The user reports "is not valid JSON":** someone may have renamed the file by hand, or the name is cut off. Read the file's metadata, and after asking, rename it again with a valid one-line JSON (straight quotes). Drive may show the long name oddly; that is expected.
 - **The user reports "unknown route" or "unsupported routes version":** the table has a name that isn't in it, or a version duet-send doesn't know. Ask, then rewrite the table (`"version":1`, `default` naming a route in `routes`).

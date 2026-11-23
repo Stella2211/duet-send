@@ -422,8 +422,8 @@ Set `DUET_ROUTES_FILE_ID` (step 5) in the shell or job that runs duet-send, or s
 **`DUET_ROUTES_FILE_ID does not look like a Google Drive file id`**
 The value must be only the id (letters, digits, `-` and `_`), not the whole link. It is the part after `/d/` in the file's link, or the `id=` value.
 
-**`could not read the routes file (HTTP ...). Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role`**
-Google answered with a sign-in page, so the file isn't shared by link, or the id is wrong. In Drive, open **Share → General access**, choose **Anyone with the link** with the role **Viewer**, and check the id with the coordinator.
+**`could not read the routes file (HTTP ...). Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role` or `Google returned a web page instead of the routes file. ...`**
+Google didn't hand out the file: the file isn't shared by link (Google then answers with a sign-in page), or the id is wrong. In Drive, open **Share → General access**, choose **Anyone with the link** with the role **Viewer**, and check the id with the coordinator.
 
 **`... is not valid JSON`**
 The file's name isn't the one-line routes JSON. Someone may have renamed it by hand. Ask the coordinator to rename the file again. Drive may show the long name oddly; that's expected.
@@ -433,6 +433,9 @@ The routes table has a name that isn't in it, or a version this duet-send doesn'
 
 **`route "..." does not contain a session id`**
 That route's value isn't a session id (it starts with `session_` or `cse_`). Ask the coordinator to rewrite it.
+
+**`could not read the routes file (Google Drive): ...`**
+The request to Google Drive failed before any answer came, usually because the network is down or a proxy or firewall blocks `drive.google.com` or `drive.usercontent.google.com`. Check your network and try again. If you set `DUET_SESSION_ID`, duet-send uses it with a warning.
 
 **`timed out after 15 seconds reading the routes file`**
 Google Drive didn't answer in time. Check your network and try again. If you set `DUET_SESSION_ID`, duet-send uses it with a warning.

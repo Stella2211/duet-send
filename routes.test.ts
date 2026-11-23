@@ -88,6 +88,16 @@ describe("fileNameFromDisposition", () => {
   test("no filename", () => {
     expect(fileNameFromDisposition("attachment")).toBeNull();
   });
+  test("an escaped quote before ; inside the name doesn't end it", () => {
+    expect(fileNameFromDisposition('attachment; filename="a\\"; b=c.json"')).toBe('a"; b=c.json');
+  });
+  test("filename* written inside the quoted name is ignored", () => {
+    const json = '{"version":1,"x":"a;filename*=UTF-8\'\'evil"}';
+    expect(fileNameFromDisposition(`attachment; filename="${json}.json"`)).toBe(`${json}.json`);
+  });
+  test("a real filename* after the quoted name wins", () => {
+    expect(fileNameFromDisposition("attachment; filename=\"x\"; filename*=UTF-8''%E3%81%82.json")).toBe("あ.json");
+  });
 });
 
 describe("driveTitleRoutesSource", () => {
@@ -135,6 +145,9 @@ describe("driveTitleRoutesSource", () => {
   for (const id of ["private", "gone"]) {
     test(`a file that isn't shared by link (${id}) explains the sharing setting`, async () => {
       await expect(loadRoutes(driveTitleRoutesSource(id, origin))).rejects.toThrow(/Anyone with the link/);
+      if (id === "private") {
+        await expect(loadRoutes(driveTitleRoutesSource(id, origin))).rejects.toThrow(/returned a web page/);
+      }
     });
   }
 

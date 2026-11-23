@@ -422,8 +422,8 @@ duet-send を動かすシェルやジョブで `DUET_ROUTES_FILE_ID`（手順5�
 **`DUET_ROUTES_FILE_ID does not look like a Google Drive file id`**
 値はIDだけ（英数字、`-`、`_`）にしてください。リンク全体ではありません。ファイルのリンクの `/d/` の後ろの部分、または `id=` の値です。
 
-**`could not read the routes file (HTTP ...). Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role`**
-Google がサインインのページを返しています。ファイルがリンク共有になっていないか、IDが違います。ドライブで **共有 → 一般的なアクセス** を開き、**リンクを知っている全員**・権限 **閲覧者** にして、IDをコーディネーターに確かめてください。
+**`could not read the routes file (HTTP ...). Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role` または `Google returned a web page instead of the routes file. ...`**
+Google がファイルを渡しませんでした。ファイルがリンク共有になっていない（このとき Google はサインインのページを返します）か、IDが違います。ドライブで **共有 → 一般的なアクセス** を開き、**リンクを知っている全員**・権限 **閲覧者** にして、IDをコーディネーターに確かめてください。
 
 **`... is not valid JSON`**
 ファイル名が1行のルーティング表の JSON になっていません。誰かが手で名前を変えたのかもしれません。コーディネーターにファイル名を付け直してもらってください。ドライブでは長い名前が変に表示されることがありますが、それで正常です。
@@ -433,6 +433,9 @@ Google がサインインのページを返しています。ファイルがリ�
 
 **`route "..." does not contain a session id`**
 そのルートの値がセッションID（`session_` または `cse_` で始まるもの）ではありません。コーディネーターに書き直してもらってください。
+
+**`could not read the routes file (Google Drive): ...`**
+Google ドライブから答えが返る前に通信が失敗しました。多くは、ネットワークが切れているか、プロキシやファイアウォールが `drive.google.com` や `drive.usercontent.google.com` を止めています。ネットワークを確かめて、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。
 
 **`timed out after 15 seconds reading the routes file`**
 Google ドライブが時間内に答えませんでした。ネットワークを確かめて、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。

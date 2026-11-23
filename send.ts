@@ -117,16 +117,16 @@ async function resolveSessionId(route?: string): Promise<Resolved> {
   } catch (e) {
     if (!(e instanceof RoutesError)) throw e;
     if (direct && route === undefined) {
-      console.error(`duet: could not read the routes file (${e.message}); using DUET_SESSION_ID instead.`);
+      console.error(`duet: ${maskIdsIn(e.message).replace(/\.$/, "")}; using DUET_SESSION_ID instead.`);
       return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes file unreadable)" };
     }
-    fail(e.message);
+    fail(maskIdsIn(e.message));
   }
   try {
     const r = resolveRoute(routes, route);
     return { id: r.id, source: source.label, route: r.name, updatedAt: routes.updatedAt };
   } catch (e) {
-    if (e instanceof RoutesError) fail(e.message);
+    if (e instanceof RoutesError) fail(maskIdsIn(e.message));
     throw e;
   }
 }

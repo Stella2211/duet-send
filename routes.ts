@@ -82,7 +82,10 @@ function utf8FromBytes(text: string): string {
 // percent-encoded) wins over filename. Google Drive sends filename="..." without escaping
 // the quotes inside the name, so the quoted value runs to the last quote, not the first.
 export function fileNameFromDisposition(header: string): string | null {
-  const star = /(?:^|;)\s*filename\*\s*=\s*([^']*)'[^']*'([^;]*)/i.exec(header);
+  const quoted = quotedFileName(header);
+  // filename* is looked for outside the quoted name, so text inside the name can't pose as it.
+  const outside = quoted ? header.slice(0, quoted.start) + header.slice(quoted.end) : header;
+  const star = /(?:^|;)\s*filename\*\s*=\s*([^']*)'[^']*'([^;]*)/i.exec(outside);
   if (star) {
     const charset = star[1].trim().toLowerCase();
     if (charset === "utf-8" || charset === "") {
@@ -91,17 +94,24 @@ export function fileNameFromDisposition(header: string): string | null {
       } catch {}
     }
   }
-  const at = /(?:^|;)\s*filename\s*=\s*/i.exec(header);
+  if (quoted) return utf8FromBytes(quoted.value);
+  const token = /(?:^|;)\s*filename\s*=\s*([^;\s]+)/i.exec(outside);
+  return token ? utf8FromBytes(token[1]) : null;
+}
+
+// The quoted filename="..." value and where it sits in the header.
+function quotedFileName(header: string): { value: string; start: number; end: number } | null {
+  const at = /(?:^|;)\s*filename\s*=\s*"/i.exec(header);
   if (!at) return null;
-  let rest = header.slice(at.index + at[0].length);
-  if (!rest.startsWith('"')) return utf8FromBytes(rest.split(";")[0].trim()) || null;
-  rest = rest.slice(1);
-  const nextParam = /";\s*[A-Za-z*-]+\s*=/.exec(rest);
+  const start = at.index + at[0].length;
+  const rest = header.slice(start);
+  // The value ends at a quote that starts the next parameter, or else at the last quote.
+  const nextParam = /(?<!\\)";\s*[A-Za-z*-]+\s*=/.exec(rest);
   const end = nextParam ? nextParam.index : rest.lastIndexOf('"');
   let value = end >= 0 ? rest.slice(0, end) : rest;
   // A properly escaped quoted string (no bare quote inside): undo the escapes.
   if (!/(^|[^\\])"/.test(value)) value = value.replace(/\\(.)/g, "$1");
-  return utf8FromBytes(value);
+  return { value, start: at.index, end: start + (end >= 0 ? end + 1 : rest.length) };
 }
 
 // Drive keeps an extension on the name (for example "{...}.json"), so only the part
@@ -124,14 +134,14 @@ export function driveTitleRoutesSource(fileId: string, origin = DRIVE_ORIGIN): R
       const disposition = res.headers.get("content-disposition");
       // Only the header is needed; the content is a dummy.
       await res.body?.cancel().catch(() => {});
-      const notShared =
-        `could not read ${label} (HTTP ${res.status}). Check the file id, and that the file is shared as ` +
-        `"Anyone with the link" with the Viewer role.`;
-      // A file that isn't shared by link ends at a sign-in page (HTML, no file name).
-      if (res.status === 401 || res.status === 403 || res.status === 404) throw new RoutesError(notShared);
-      if (!res.ok) throw new RoutesError(`could not read ${label} (HTTP ${res.status})`);
+      const check = 'Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role.';
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        throw new RoutesError(`could not read the routes file (HTTP ${res.status}). ${check}`);
+      }
+      if (!res.ok) throw new RoutesError(`could not read the routes file (HTTP ${res.status})`);
       const name = disposition ? fileNameFromDisposition(disposition) : null;
-      if (name === null) throw new RoutesError(notShared);
+      // A file that isn't shared by link ends at a sign-in page: a web page with no file name.
+      if (name === null) throw new RoutesError(`Google returned a web page instead of the routes file. ${check}`);
       return routesJsonFromName(name);
     },
   };
