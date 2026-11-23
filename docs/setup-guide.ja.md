@@ -33,7 +33,7 @@ macOS、Linux、Windows に duet-send を入れる手順です。人が読みな
 {"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_..."}}
 ```
 
-`default` はルートを選ばなかったときに使うルートです。`main` はコーディネーター自身です。`updated_at` は省略でき、`--dry-run` で表示するだけです。
+`default` はルートを選ばなかったときに使うルートです。`--to <ルート名>` で別のルートを選べます（手順7を参照）。`main` はコーディネーター自身です。`updated_at` は省略でき、`--dry-run` で表示するだけです。
 
 ## 0. 始める前に
 
@@ -216,6 +216,8 @@ Node や Bun のプログラムから呼ぶときは、シェルのコマンド�
 import { execFile } from "node:child_process";
 execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message]);
 ```
+
+ルーティング表に複数のルートがあるときは、`--to <ルート名>` で既定のルートではなくそのルートに送れます。例：`bun /path/to/duet-send/send.ts --to work --tag "[夜間ビルド]" "ビルドが失敗しました"`。`--to` を付けたときは `DUET_SESSION_ID` に切り替えず、ルートを読めなければ何も送りません。
 
 本文が `-` で始まるかもしれないときは、前に `--` を置きます：`bun run duet -- "-5件のテストが失敗"`。（タグが必ず先頭に付くので、`claude` に本文がオプションとして読まれることはありません。）
 

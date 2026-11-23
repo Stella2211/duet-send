@@ -9,7 +9,7 @@ duet-send is unofficial. Some of the steps below (`get_session`, how routines be
 duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in a **routes table**: one line of JSON that is the **file name** (title) of one file in the user's Google Drive.
 
 - The table: `{"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"<your session id>"}}`. Use straight quotes, no line breaks, and set `updated_at` to now in UTC (ISO 8601).
-- `main` is you, the coordinator. `default` names the route duet-send uses when none is chosen. Add other routes only when the user asks.
+- `main` is you, the coordinator. `default` names the route duet-send uses when none is chosen. Add other routes only when the user asks. duet-send sends to another route with `--to <route>`.
 - The file is shared as **Anyone with the link** with the **Viewer** role. duet-send reads only the file's name through Google's public download link, with no sign-in. The file's content is a dummy and is ignored.
 - The name is used because the Google Drive connector can change a file's name (and description) but not its content.
 - duet-send reads the name from its first `{` to its last `}`, so an extension such as `.json` after the JSON is fine. Nothing else may be in the name.

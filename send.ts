@@ -5,13 +5,15 @@
  *   bun run duet "message"
  *   echo "message" | bun run duet
  *   bun run duet --tag "[Discord bot]" "message"
+ *   bun run duet --to work "message"   # send to the route "work" in the routes table
  *   bun run duet --dry-run "message"   # print the target and body, send nothing
  *   bun /path/to/send.ts --hook         # Claude Code Stop hook: reads the hook JSON on stdin
  *
  * The destination comes from a routes table (JSON mapping route names to session ids) kept
  * as the name of a Google Drive file shared by link, named by DUET_ROUTES_FILE_ID (see
  * routes.ts). If it cannot be read, DUET_SESSION_ID (the id itself) is used instead when set.
- * Without DUET_ROUTES_FILE_ID, DUET_SESSION_ID is used.
+ * Without DUET_ROUTES_FILE_ID, DUET_SESSION_ID is used. With --to, only the routes table is
+ * used: a route that can't be read or found is an error, never DUET_SESSION_ID.
  *
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
@@ -41,6 +43,7 @@ const children = new Set<{ kill(): void }>();
 // ---------- arguments ----------
 function parseArgs(argv: string[]) {
   let tag: string | null = null;
+  let to: string | undefined;
   let dryRun = false;
   let verbose = false;
   let hook = false;
@@ -49,6 +52,9 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a === "--tag") {
       tag = argv[++i] ?? fail("--tag needs a value");
+    } else if (a === "--to") {
+      to = (argv[++i] ?? fail("--to needs a route name")).trim();
+      if (!to) fail("--to needs a route name");
     } else if (a === "--dry-run") {
       dryRun = true;
     } else if (a === "--verbose") {
@@ -57,8 +63,9 @@ function parseArgs(argv: string[]) {
       hook = true;
     } else if (a === "--help" || a === "-h") {
       console.log(
-        'usage: bun run duet [--tag "[name]"] [--dry-run] [--verbose] "message"   (or pipe the message on stdin)\n' +
-          "       bun /path/to/send.ts --hook [--tag \"[name]\"]   (Claude Code Stop hook; reads the hook JSON on stdin)",
+        'usage: bun run duet [--to <route>] [--tag "[name]"] [--dry-run] [--verbose] "message"   (or pipe the message on stdin)\n' +
+          "       bun /path/to/send.ts --hook [--to <route>] [--tag \"[name]\"]   (Claude Code Stop hook; reads the hook JSON on stdin)\n" +
+          "  --to <route>   send to this route of the routes table instead of its default route",
       );
       process.exit(0);
     } else if (a === "--") {
@@ -68,7 +75,7 @@ function parseArgs(argv: string[]) {
       rest.push(a);
     }
   }
-  return { tag, dryRun, verbose, hook, text: rest.join(" ") };
+  return { tag, to, dryRun, verbose, hook, text: rest.join(" ") };
 }
 
 async function readStdin(): Promise<string> {
@@ -96,13 +103,14 @@ function maskIdsIn(text: string): string {
 
 type Resolved = { id: string; source: string; route?: string; updatedAt?: string };
 
-// `route` is the route name to use (default route when omitted). For a later --to option:
-// when a route name is given, falling back to DUET_SESSION_ID must not happen.
+// `route` is the route name from --to (the default route when omitted). When a route name is
+// given, DUET_SESSION_ID is never used: it would send to the wrong session.
 async function resolveSessionId(route?: string): Promise<Resolved> {
   const direct = process.env.DUET_SESSION_ID?.trim();
   const fileId = process.env.DUET_ROUTES_FILE_ID?.trim();
 
   if (!fileId) {
+    if (route !== undefined) fail(`--to ${route} needs the routes file: set DUET_ROUTES_FILE_ID (DUET_SESSION_ID has no routes)`);
     if (direct) return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID" };
     fail(
       "no destination: set DUET_ROUTES_FILE_ID to the Drive file id of your routes file (see the setup guide), or set DUET_SESSION_ID.",
@@ -267,7 +275,7 @@ const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
 const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
 const message = `${tag} ${text}`;
 
-const { id, source, route, updatedAt } = await resolveSessionId();
+const { id, source, route, updatedAt } = await resolveSessionId(args.to);
 // Checked before the dry run too, so a dry run fails the same way a real send would.
 const claude = resolveClaude();
 const shownId = args.verbose ? id : maskId(id);

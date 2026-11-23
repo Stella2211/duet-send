@@ -70,8 +70,8 @@ describe("--hook: the last message", () => {
 });
 
 // Runs `send.ts --dry-run` with the given env overrides and returns the result.
-async function dryRun(env: Record<string, string>) {
-  const proc = Bun.spawn(["bun", SEND, "--dry-run", "hi"], {
+async function dryRun(env: Record<string, string>, extra: string[] = []) {
+  const proc = Bun.spawn(["bun", SEND, "--dry-run", ...extra, "hi"], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -91,5 +91,16 @@ describe("destination", () => {
     const r = await dryRun({ DUET_ROUTES_FILE_ID: "a/b", DUET_SESSION_ID: "session_test0123456789" });
     expect(r.code).not.toBe(0);
     expect(r.err).toContain("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
+  });
+  test("--to without the routes file fails instead of using DUET_SESSION_ID", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789" }, ["--to", "work"]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("--to work needs the routes file");
+    expect(r.out).not.toContain("to:");
+  });
+  test("--to needs a route name", async () => {
+    const r = await dryRun({ DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789" }, ["--to", " "]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("--to needs a route name");
   });
 });
