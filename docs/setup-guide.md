@@ -146,7 +146,7 @@ bun run check
 | Variable | When you need it |
 | --- | --- |
 | `DUET_ROUTES_FILE_ID` | Always, unless you use `DUET_SESSION_ID` alone: the Drive file id of the routes file |
-| `DUET_DISCORD_WEBHOOK` | You want a Discord alert when the send itself fails (for example a stale id). Not alerted, only printed to stderr: a routes file that can't be read, `claude` not found, a message that is too long, and the 60 second hook timeout. In hook mode nobody sees stderr, so those fail silently |
+| `DUET_DISCORD_WEBHOOK` | You want a Discord alert when the send itself fails (for example a stale id), or when Claude Code can't be started (`claude` not found, or it fails to start). Not alerted, only printed to stderr: a routes file that can't be read, a message that is too long, and the 60 second hook timeout. In hook mode nobody sees stderr, so those fail silently |
 | `DUET_TAG` | You want a default tag other than `[Claude Code]`. `--hook` doesn't use it (its tag is `[Claude Code: Stop]`; change that with `--tag`) |
 | `DUET_CLAUDE_BIN` | `claude` isn't on PATH, or you run duet-send on a schedule (step 7) |
 | `DUET_SESSION_ID` | The id itself. Used when `DUET_ROUTES_FILE_ID` is not set, and as a fallback (with a warning) when the routes file can't be read. It goes stale when the coordinator changes |
@@ -255,7 +255,7 @@ It holds the name of the folder Claude Code was working in (not the full path) a
 
 - It fires **every time Claude finishes a response**, not only when a whole task is done. A quick answer, or Claude stopping to ask you something, also sends a message. Expect one message per turn.
 - It does **not** fire when you interrupt Claude (Esc). When a turn ends because of an API error (rate limit, sign-in problem, and so on), Claude Code runs `StopFailure` instead; see the optional second entry below.
-- Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When `claude -p ... --cloud` itself fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert (the alert also needs a network connection). Problems before that, such as a routes file that can't be read, and the 60 second timeout only go to stderr, which nobody sees in hook mode.
+- Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When `claude -p ... --cloud` itself fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert (the alert also needs a network connection). The same goes when Claude Code can't be started at all (`claude` not found, or it fails to start). Problems before that, such as a routes file that can't be read, and the 60 second timeout only go to stderr, which nobody sees in hook mode.
 - Sending only queues the message. The coordinator reads it the next time it runs.
 
 So it is a reliable "a turn ended" signal while Claude Code is running normally, not a guarantee that every piece of work is reported.
