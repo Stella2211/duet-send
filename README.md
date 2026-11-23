@@ -58,12 +58,14 @@ The full walkthrough for macOS, Linux and Windows, including scheduled runs and 
 bun run duet "message"
 echo "a longer message" | bun run duet
 bun run duet --tag "[Discord bot]" "message"
+bun run duet --to work "message"
 bun run duet --dry-run "message"
 bun run duet --verbose "message"
 ```
 
 - `--dry-run` finds the session id and `claude`, prints what it would send, and sends nothing. It fails in the same places a real send would.
 - `--tag` sets the label in front of the message (default `[Claude Code]`). Messages sent this way arrive in Duet without any sender information, so the tag is how the coordinator knows which script sent it.
+- `--to <route>` sends to that route of the routes table instead of its default route. It needs `DUET_ROUTES_FILE_ID`, and it never falls back to `DUET_SESSION_ID`: if the routes file can't be read or has no such route, nothing is sent. An unknown route lists the routes in the file.
 - `--verbose` shows the full session id and Claude Code's own output. Without it, session ids are shortened (like `session_01Ab…xyz`) so they don't end up in logs or screenshots.
 
 From another directory or another program, call the script by its full path:
@@ -83,12 +85,12 @@ The routes table is one line of JSON, and it is the **file name** of the routes 
 ```
 
 - `routes` maps a route name to a session id. `main` is the coordinator itself. Other routes may be added.
-- `default` names the route used when none is chosen.
+- `default` names the route used when `--to` isn't given.
 - `updated_at` is optional. It is only shown by `--dry-run`.
 
 duet-send requests `https://drive.google.com/uc?export=download&id=<FILE_ID>` with plain HTTPS and no sign-in, and reads only the file name from the response's `Content-Disposition` header, never the content. It parses the name, from its first `{` to its last `}`, as the routes JSON, so an extension such as `.json` at the end of the name does no harm. If the file isn't shared by link, Google answers with a sign-in page, and duet-send tells you to check the id and the "Anyone with the link" / Viewer setting.
 
-`DUET_SESSION_ID` is used when `DUET_ROUTES_FILE_ID` is not set. It is also a fallback, with a warning on stderr, when the routes file can't be read or parsed. An unknown or invalid route always fails.
+`DUET_SESSION_ID` is used when `DUET_ROUTES_FILE_ID` is not set. It is also a fallback, with a warning on stderr, when the routes file can't be read or parsed. With `--to`, there is no fallback. An unknown or invalid route always fails.
 
 ## Environment variables (all optional)
 

@@ -33,7 +33,7 @@ The coordinator keeps its session id in a routes table: one line of JSON that is
 {"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_..."}}
 ```
 
-`default` is the route used when none is chosen. `main` is the coordinator itself. `updated_at` is optional and only shown by `--dry-run`.
+`default` is the route used when none is chosen; `--to <route>` picks another one (see step 7). `main` is the coordinator itself. `updated_at` is optional and only shown by `--dry-run`.
 
 ## 0. Before you start
 
@@ -216,6 +216,8 @@ From a Node or Bun program, pass the message as an argument; don't build a shell
 import { execFile } from "node:child_process";
 execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message]);
 ```
+
+If the routes table has more than one route, `--to <route>` sends to that route instead of the default one, for example `bun /path/to/duet-send/send.ts --to work --tag "[Nightly build]" "Build failed"`. With `--to`, duet-send never falls back to `DUET_SESSION_ID`; if the route can't be read, nothing is sent.
 
 If the message may start with `-`, put `--` before it: `bun run duet -- "-5 tests failed"`. (The tag is always put in front, so the message can never be read as a flag by `claude`.)
 
