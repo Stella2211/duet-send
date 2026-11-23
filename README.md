@@ -90,6 +90,8 @@ The routes table is one line of JSON, and it is the **file name** of the routes 
 
 duet-send requests `https://drive.google.com/uc?export=download&id=<FILE_ID>` with plain HTTPS and no sign-in, and reads only the file name from the response's `Content-Disposition` header, never the content. It parses the name, from its first `{` to its last `}`, as the routes JSON, so an extension such as `.json` at the end of the name does no harm. If the file isn't shared by link, Google answers with a sign-in page, and duet-send tells you to check the id and the "Anyone with the link" / Viewer setting.
 
+If you use several Duet chats, each chat's coordinator keeps its own route in the same table, and an approval rule in each chat avoids a stop at every rename. See [step 9 of the setup guide](docs/setup-guide.md#9-optional-other-chats-keep-their-own-route).
+
 `DUET_SESSION_ID` is used when `DUET_ROUTES_FILE_ID` is not set. It is also a fallback, with a warning on stderr, when the routes file can't be read or parsed. With `--to`, there is no fallback. An unknown or invalid route always fails.
 
 ## Environment variables (all optional)

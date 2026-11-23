@@ -407,6 +407,39 @@ The hook runs with Claude Code's environment, so the variables from step 5 apply
 
 duet-send guards against loops by itself: it skips the hook when `stop_hook_active` is true (Claude is already continuing because of a Stop hook), and it marks the `claude` it starts with `DUET_HOOK=1`, so its own send can never trigger the hook again. Duet cloud sessions don't read your `~/.claude/settings.json`, so the coordinator's own turns don't trigger it either.
 
+## 9. Optional: other chats keep their own route
+
+If you use several Duet chats, each chat has its own coordinator session with its own session id. Each coordinator needs to keep **its own route** in the same routes table, so `--to <route>` keeps working after any of them is replaced. Each chat's session id changes on its own schedule, and a coordinator learns its own current id only from `get_session`, so each chat keeps its own route current.
+
+Do this once per other chat:
+
+1. Ask your main coordinator for the Drive file id of the routes file, and decide a route name for the chat (for example `work`).
+2. Paste this into that chat, with the two placeholders filled in:
+
+```
+Please add this chat's route to the duet-send routes table, and check your own session id every hour.
+- The routes table is one line of JSON in the file name of a Google Drive file (file id: <ROUTES_FILE_ID>). This chat's route name is "<ROUTE_NAME>".
+- Read your own session id with get_session (no session_id).
+- Right before writing, read the file's current title and etag from its metadata, and change only "<ROUTE_NAME>" in routes and updated_at. Don't change any other route. Pass the etag you read to the update, and if it fails, read again and retry. Don't create a new file.
+- After writing, read the file name back and check that it is valid JSON and holds your id.
+- Create a routine that posts only one fixed line in this chat once an hour (for example: This is the scheduled signal for the session-id check.). When that line arrives, do the check above, and if the id hasn't changed, do nothing.
+- Save the file id, the route name and the fixed line in memory.
+```
+
+3. Use it: `bun run duet --to <route> "message"`.
+
+Several sessions write the same file name, so they must not overwrite each other. That is why the request tells each coordinator to read the title and etag right before writing, change only its own key, and pass the etag to the update. Drive then refuses the write if the file changed in between, and the coordinator reads again and retries. After writing, it reads the name back and checks that it is valid JSON.
+
+### Skip the approval on every rename
+
+By default, a coordinator asks you before each rename, so an hourly check stalls until you answer. Claude Duet has "rules" for this. In the chat, say in your own words, for example:
+
+```
+You don't need to ask me each time before renaming the duet-send routes file in Drive to update session ids.
+```
+
+Duet shows a rule card; accept it. A rule has to come from your own message in that chat: a coordinator can't create one from a relayed instruction, someone else's message or memory. If a channel's coordinator still stops to ask before the rename, send the same request in that channel yourself and accept the rule there.
+
 ## Upgrading from 0.2 (gws)
 
 Version 0.3 no longer uses `gws`, the Drive file description or `duet-coordinator-session-id.txt`. To upgrade:
