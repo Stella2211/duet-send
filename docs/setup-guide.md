@@ -37,7 +37,7 @@ The coordinator keeps its session id in a routes table: one line of JSON that is
 
 ## 0. Before you start
 
-- **The routes file must exist first.** Give the link to this repository to your Duet coordinator and ask it to set up duet-send. It creates the file in your Google Drive and tells you its **Drive file id** (the part after `/d/` in the file's link, or the `id=` value). Then, in Drive, open **Share → General access** and choose **Anyone with the link**, with the role **Viewer**. Never Editor or Commenter: anyone who can edit the file can rename it and redirect your messages. Keep the id to yourself and don't commit it.
+- **The routes file must exist first.** Give the link to this repository to your Duet coordinator and ask it to set up duet-send. It creates a `duet-send` folder in your Google Drive with the routes file (and a short README explaining the folder), and tells you its **Drive file id** (the part after `/d/` in the file's link, or the `id=` value). Then, in Drive, open the routes file (not the folder), choose **Share → General access** and choose **Anyone with the link**, with the role **Viewer**. Never Editor or Commenter: anyone who can edit the file can rename it and redirect your messages. Keep the id to yourself and don't commit it.
 - You need a Claude plan with Claude Code and cloud sessions (Pro, Max, Team, or Enterprise with the right seat). Sending with `--cloud` requires signing in with your Claude account; it doesn't work with an API key alone or with Amazon Bedrock, Google Vertex AI or other third-party providers.
 - After installing anything in the steps below, **open a new terminal** before running the next command, so the new program is found.
 

@@ -26,16 +26,21 @@ Don't use an id from your memory, an old message or this repository: it may belo
 
 ### 2. Create the routes file (ask first)
 
-1. Search the user's Drive for an existing routes file (a file whose name starts with `{"version":1`). If there is one, say so and ask whether to rename it (see "On every session start") instead of creating a second one.
-2. Ask the user in one line before writing, for example: "Should I create a small file in your Google Drive whose name holds my current session id, so duet-send can find me? You would share it as Anyone with the link, Viewer only."
-3. On their yes, create the file with the Google Drive connector's create tool: a small plain-text file (`text/plain`, with conversion to a Google Docs type turned off), in the My Drive root, with this content: `duet-send routes: this file's name holds the routes table; don't rename it by hand`. Set its **title** to the one-line JSON above, with your id from step 1.
-4. Note the **Drive file id** of the file.
+1. Search the user's Drive for an existing routes file (a file whose name starts with `{"version":1`) and for a folder named `duet-send`. If either exists, say so and ask whether to reuse it (rename the routes file as in "On every session start") instead of creating a second one.
+2. Ask the user in one line before writing, for example: "Should I create a duet-send folder in your Google Drive, with a small file whose name holds my current session id and a README that explains the folder? duet-send reads the file to find me. You would share only that file, as Anyone with the link, Viewer only."
+3. On their yes, with the Google Drive connector's create tool:
+   1. Create a folder named `duet-send` in the My Drive root (`application/vnd.google-apps.folder`).
+   2. In that folder, create the routes file: a small plain-text file (`text/plain`, with conversion to a Google Docs type turned off) with this content: `duet-send routes: this file's name holds the routes table; don't rename it by hand. See README.md in this folder.` Set its **title** to the one-line JSON above, with your id from step 1.
+   3. In the same folder, create `README.md` (`text/markdown`, with conversion turned off) with the text in "The folder's README" below, exactly as written. It is for the user, when they find the folder and wonder what it is; it is not the repository's README.
+
+   The create tool sets a file's content only when it creates the file; you can't change the content afterwards (only the name and description). So write the README right the first time, and keep the routes table in the routes file's name, not its content.
+4. Note the **Drive file id** of the routes file.
 
 If no Google Drive connector is connected, offer to connect one. Without it you can't keep the table current; the user can still use `DUET_SESSION_ID` by hand, which goes stale when you change.
 
 ### 3. Ask the user to share it (Viewer only)
 
-You don't change sharing yourself. Ask the user to open the file in Google Drive, choose **Share → General access → Anyone with the link**, and set the role to **Viewer**. Stress this:
+You don't change sharing yourself. Ask the user to open the routes file (not the folder) in Google Drive, choose **Share → General access → Anyone with the link**, and set the role to **Viewer**. Stress this:
 
 - Never **Editor** or **Commenter**. Anyone who can edit the file can rename it, and so redirect the user's messages.
 - Never add you or anyone else as an editor for this purpose.
@@ -71,6 +76,40 @@ Any fixed line works; the Japanese one above means "This is the scheduled signal
 Then add to your project memory, next to the duet-send entry: the exact wake line, and that when it arrives you run the check in "On every session start" below. Routine posts aren't shown to the user, so this signal costs them nothing. Tell the user how often it runs, and that it runs until they ask you to stop it.
 
 If the user set up the older routine that called `get_session` itself, offer to replace its prompt with the one above (ask first; it's their routine).
+
+### The folder's README
+
+Create `README.md` in the `duet-send` folder with this text. Don't fill in ids or change it per user.
+
+```markdown
+# duet-send
+
+English | 日本語 below
+
+This folder is used by **duet-send**, a small tool that sends messages from your own computer to your Claude Duet coordinator. Your coordinator created it.
+
+- The file whose name starts with `{"version":1` is the **routes table**. Its name (not its content) holds the coordinator's current session id, written as one line of JSON. The coordinator renames the file whenever its session id changes. It uses the name because Claude's Google Drive connector can rename a file but can't change its content.
+- duet-send on your computer reads that name through the file's "Anyone with the link" share.
+- **Share the routes file as Viewer only.** Anyone who can edit it could rename it and redirect your messages. Keep its link to yourself: whoever has it can see the route names and session ids, and the owner's Google account name and email address. They still can't send to your sessions.
+- **Don't rename, move to the trash or replace the routes file.** duet-send then can't find your coordinator. A new file gets a new id, which you would have to set again on every computer.
+- Not using duet-send any more? Ask your coordinator to stop updating it, then delete this folder.
+
+More: https://github.com/Stella2211/duet-send
+
+---
+
+# duet-send（日本語）
+
+このフォルダは **duet-send** が使っています。duet-send は、自分のパソコンから Claude Duet のコーディネーターにメッセージを送る小さなツールです。このフォルダはコーディネーターが作りました。
+
+- 名前が `{"version":1` で始まるファイルが **宛先表** です。中身ではなく **ファイル名** に、コーディネーターの今のセッションIDが1行の JSON で書いてあります。セッションIDが変わるたびに、コーディネーターがファイル名を書き換えます。ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、中身は変えられないためです。
+- パソコンの duet-send は、このファイルの「リンクを知っている全員」の共有を通してファイル名を読みます。
+- **宛先表のファイルは「閲覧者」でだけ共有してください。** 編集できる人は、ファイル名を変えてメッセージの届け先を変えられます。リンクは自分だけで持ってください。リンクを知っている人には、宛先名とセッションID、持ち主の Google アカウントの名前とメールアドレスが見えます（ただし、あなたのセッションに送ることはできません）。
+- **宛先表のファイルの名前を変えたり、ゴミ箱に入れたり、作り直したりしないでください。** duet-send がコーディネーターを見つけられなくなります。作り直したファイルはIDが変わるので、すべてのパソコンで設定し直すことになります。
+- duet-send を使わなくなったら、コーディネーターに更新をやめるよう伝えてから、このフォルダを削除してください。
+
+詳しくは: https://github.com/Stella2211/duet-send
+```
 
 ## On every session start
 

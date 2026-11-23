@@ -27,7 +27,7 @@ Claude Duet has no official, easy way to put a message into the coordinator from
 
 Give the link to this repository to your AI assistants and ask them to set it up, in this order:
 
-1. **In Claude Duet** (your main chat): "Set up duet-send from https://github.com/Stella2211/duet-send". The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) and creates the routes file. It asks before it writes to your Google Drive, asks you to share the file by link (Viewer only), and tells you the file's Drive id. It also asks whether you want an hourly signal that wakes it to re-check its id.
+1. **In Claude Duet** (your main chat): "Set up duet-send from https://github.com/Stella2211/duet-send". The coordinator follows [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) and creates a `duet-send` folder in your Google Drive, with the routes file and a short README that explains the folder. It asks before it writes to your Google Drive, asks you to share the file by link (Viewer only), and tells you the file's Drive id. It also asks whether you want an hourly signal that wakes it to re-check its id.
 2. **In Claude Code on your computer**: "Install duet-send from https://github.com/Stella2211/duet-send by following docs/setup-guide.md". It installs what's missing, downloads this repository, sets `DUET_ROUTES_FILE_ID` (with your OK) and runs a dry run.
 
 ## Quick start (by hand)
