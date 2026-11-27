@@ -42,20 +42,58 @@ function fail(msg: string, code = 1): never {
 const children = new Set<{ kill(): void }>();
 
 // ---------- arguments ----------
+const HELP = `usage: bun run duet [--to <route>] [--tag "[name]"] [--dry-run] [--verbose] [--] "message"
+       (or pipe the message on stdin)
+       bun /path/to/send.ts --hook [--to <route>] [--tag "[name]"]
+       (Claude Code Stop hook; reads the hook JSON on stdin)
+
+options:
+  --to <route>   send to this route of the routes table instead of its default route
+  --tag <text>   tag put before the message (default: DUET_TAG, or "[Claude Code]")
+  --dry-run      print the target and the message, send nothing
+  --verbose      show the full session id and Claude Code's own output
+  --hook         run as a Claude Code Stop hook: read the hook JSON on stdin; always exit 0
+  --             end of options: the rest is the message, even if it starts with "-"
+  -h, --help     show this help
+  (--to=<route> and --tag=<text> work too)
+
+environment:
+  DUET_ROUTES_FILE_ID     Drive file id of the routes file
+  DUET_SESSION_ID         session id to use when there is no routes file (or it can't be read)
+  DUET_TAG                default tag
+  DUET_DISCORD_WEBHOOK    Discord webhook URL for failure alerts
+  DUET_CLAUDE_BIN         path to claude, if it is not on PATH`;
+
+// Never exits: a problem is returned as `error`, so main can first decide whether this is
+// hook mode (which always exits 0). A lone "-" is plain text; any other argument starting
+// with "-" before "--" is an unknown option and never part of the message.
 function parseArgs(argv: string[]) {
   let tag: string | null = null;
   let to: string | undefined;
   let dryRun = false;
   let verbose = false;
   let hook = false;
+  let error: string | undefined;
   const rest: string[] = [];
+  const problem = (msg: string) => {
+    error ??= msg;
+  };
+  const setTo = (value: string | undefined) => {
+    const name = value?.trim();
+    if (name) to = name;
+    else problem("--to needs a route name");
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--tag") {
-      tag = argv[++i] ?? fail("--tag needs a value");
+      if (i + 1 < argv.length) tag = argv[++i];
+      else problem("--tag needs a value");
+    } else if (a.startsWith("--tag=")) {
+      tag = a.slice("--tag=".length);
     } else if (a === "--to") {
-      to = (argv[++i] ?? fail("--to needs a route name")).trim();
-      if (!to) fail("--to needs a route name");
+      setTo(argv[++i]);
+    } else if (a.startsWith("--to=")) {
+      setTo(a.slice("--to=".length));
     } else if (a === "--dry-run") {
       dryRun = true;
     } else if (a === "--verbose") {
@@ -63,20 +101,18 @@ function parseArgs(argv: string[]) {
     } else if (a === "--hook") {
       hook = true;
     } else if (a === "--help" || a === "-h") {
-      console.log(
-        'usage: bun run duet [--to <route>] [--tag "[name]"] [--dry-run] [--verbose] "message"   (or pipe the message on stdin)\n' +
-          "       bun /path/to/send.ts --hook [--to <route>] [--tag \"[name]\"]   (Claude Code Stop hook; reads the hook JSON on stdin)\n" +
-          "  --to <route>   send to this route of the routes table instead of its default route",
-      );
+      console.log(HELP);
       process.exit(0);
     } else if (a === "--") {
       rest.push(...argv.slice(i + 1));
       break;
+    } else if (a.startsWith("-") && a !== "-") {
+      problem(`unknown option ${a}. To send text that starts with "-", put it after "--": bun run duet -- "${a} ..."`);
     } else {
       rest.push(a);
     }
   }
-  return { tag, to, dryRun, verbose, hook, text: rest.join(" ") };
+  return { tag, to, dryRun, verbose, hook, error, hasText: rest.length > 0, text: rest.join(" ").trim() };
 }
 
 async function readStdin(): Promise<string> {
@@ -265,9 +301,10 @@ async function hookMessage(): Promise<string | null> {
 }
 
 // ---------- main ----------
-// Set before parsing, so even an argument error exits 0 in hook mode.
-hookMode = Bun.argv.slice(2).includes("--hook");
 const args = parseArgs(Bun.argv.slice(2));
+// Set before reporting an argument error, so that error exits 0 too in hook mode.
+hookMode = args.hook;
+if (args.error) fail(args.error, 2);
 // In hook mode, status lines go to stderr so stdout stays free for Claude Code.
 const log = hookMode ? console.error : console.log;
 
@@ -285,7 +322,9 @@ if (hookMode) {
   if (built === null) exit(0);
   text = built;
 } else {
-  text = args.text || (await readStdin());
+  // Stdin is read only when no text was given: a blank argument is an empty message, and
+  // must not wait on a stdin that is open but never closed.
+  text = args.hasText ? args.text : await readStdin();
 }
 if (!text) fail('the message is empty. Usage: bun run duet "message"', 2);
 

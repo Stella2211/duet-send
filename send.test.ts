@@ -374,3 +374,111 @@ describe.skipIf(process.platform === "win32")("sending", () => {
     }
   });
 });
+
+// ---------- arguments ----------
+// No claude is started: either the run ends at an argument error, or it is a dry run.
+async function runArgs(args: string[], stdin: string | null = null, env: Record<string, string> = {}) {
+  const proc = Bun.spawn([process.execPath, SEND, ...args], {
+    stdin: stdin === null ? "ignore" : new Blob([stdin]),
+    stdout: "pipe",
+    stderr: "pipe",
+    env: testEnv({ DUET_SESSION_ID: FULL_ID, ...env }),
+  });
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { out, err, code: await proc.exited };
+}
+const messageOf = (out: string) => out.slice(out.indexOf("message:\n") + "message:\n".length).replace(/\n$/, "");
+
+describe("arguments", () => {
+  test("an unknown option is an error and nothing is sent", async () => {
+    const r = await runArgs(["--dry-rnu", "hi"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("duet: unknown option --dry-rnu");
+    expect(r.err).toContain('after "--"');
+    expect(r.out).toBe("");
+  });
+
+  test("an unknown short option is an error too", async () => {
+    const r = await runArgs(["--dry-run", "-x", "hi"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("unknown option -x");
+  });
+
+  test("an unknown option in hook mode exits 0", async () => {
+    const r = await runArgs(["--hook", "--bogus"]);
+    expect(r.code).toBe(0);
+    expect(r.err).toContain("unknown option --bogus");
+  });
+
+  test("after -- text starting with - is the message", async () => {
+    const r = await runArgs(["--dry-run", "--", "--dry-rnu", "hi"]);
+    expect(r.code).toBe(0);
+    expect(messageOf(r.out)).toBe("[Claude Code] --dry-rnu hi");
+  });
+
+  test("a lone - is plain text", async () => {
+    const r = await runArgs(["--dry-run", "a", "-", "b"]);
+    expect(r.code).toBe(0);
+    expect(messageOf(r.out)).toBe("[Claude Code] a - b");
+  });
+
+  test("--tag=<value> and --to=<route> work", async () => {
+    const r = await runArgs(["--dry-run", "--tag=[Bot]", "--to=work", "hi"]);
+    // no routes file: the route is refused, which shows it was understood as --to
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("--to work needs the routes file");
+    const t = await runArgs(["--dry-run", "--tag=[Bot]", "hi"]);
+    expect(messageOf(t.out)).toBe("[Bot] hi");
+  });
+
+  test("--to= with no name is an error", async () => {
+    const r = await runArgs(["--to=", "hi"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("--to needs a route name");
+  });
+
+  test("--tag without a value is an error", async () => {
+    const r = await runArgs(["hi", "--tag"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("--tag needs a value");
+  });
+
+  test("whitespace-only text is empty: exit 2", async () => {
+    const r = await runArgs(["  "]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("the message is empty");
+  });
+
+  test("whitespace-only text does not wait for stdin (open but never closed)", async () => {
+    const proc = Bun.spawn([process.execPath, SEND, "--dry-run", "   "], {
+      stdin: "pipe", // left open on purpose
+      stdout: "pipe",
+      stderr: "pipe",
+      env: testEnv({ DUET_SESSION_ID: FULL_ID }),
+    });
+    const timer = setTimeout(() => proc.kill(), 4000);
+    const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+    clearTimeout(timer);
+    expect(code).toBe(2);
+    expect(err).toContain("the message is empty");
+  });
+
+  test("hook mode comes from the parsed arguments only", async () => {
+    // after "--" it is message text, not an option
+    const a = await runArgs(["--dry-run", "--", "--hook"]);
+    expect(a.code).toBe(0);
+    expect(messageOf(a.out)).toBe("[Claude Code] --hook");
+    // as the value of --tag it is a tag
+    const b = await runArgs(["--dry-run", "--tag", "--hook", "hi"]);
+    expect(b.code).toBe(0);
+    expect(messageOf(b.out)).toBe("--hook hi");
+  });
+
+  test("--help lists the options and the environment variables", async () => {
+    const r = await runArgs(["--help"]);
+    expect(r.code).toBe(0);
+    for (const word of ["--dry-run", "--verbose", "--tag", "--to", "--hook", "  --  ", "DUET_ROUTES_FILE_ID", "DUET_SESSION_ID", "DUET_TAG", "DUET_DISCORD_WEBHOOK", "DUET_CLAUDE_BIN"]) {
+      expect(r.out).toContain(word);
+    }
+  });
+});
