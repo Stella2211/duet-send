@@ -228,7 +228,7 @@ printf '%s' "$FAKE_STDERR" >&2
 exit "\${FAKE_EXIT:-0}"
 `;
 
-type FakeOpts = { args?: string[]; stdin?: object; env?: Record<string, string>; exit?: number; stdout?: string; stderr?: string };
+type FakeOpts = { webhookStatus?: number; args?: string[]; stdin?: object; env?: Record<string, string>; exit?: number; stdout?: string; stderr?: string };
 
 async function runFake(o: FakeOpts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "duet-send-test-"));
@@ -237,7 +237,7 @@ async function runFake(o: FakeOpts = {}) {
     port: 0,
     async fetch(req) {
       posts.push(await req.text());
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: o.webhookStatus ?? 204 });
     },
   });
   try {
@@ -304,6 +304,67 @@ describe.skipIf(process.platform === "win32")("sending", () => {
     const content = JSON.parse(r.posts[0]).content as string;
     expect(content).toContain("sending to Claude Duet failed (exit 3)");
     expect(content).not.toContain(FULL_ID);
+  });
+
+  test("the alert and stderr use masked ids, even after an underscore or letters", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "x_session_abcdefghijklmnop and cse_ZZZZ0123456789yy" });
+    const content = JSON.parse(r.posts[0]).content as string;
+    for (const text of [r.err, content]) {
+      expect(text).not.toContain("abcdefghijklmnop");
+      expect(text).not.toContain("ZZZZ0123456789yy");
+      expect(text).toContain("session_abcd…nop");
+    }
+  });
+
+  test("the alert replaces the home folder with ~", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "failed in /home/tester/.claude/x", env: { HOME: "/home/tester" } });
+    const content = JSON.parse(r.posts[0]).content as string;
+    expect(content).toContain("~/.claude/x");
+    expect(content).not.toContain("/home/tester");
+  });
+
+  test("the home folder is shortened before ids are masked, so a home that looks like an id is replaced whole", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "failed in /home/session_abcdefghijkl/x", env: { HOME: "/home/session_abcdefghijkl" } });
+    const content = JSON.parse(r.posts[0]).content as string;
+    expect(content).toContain("failed in ~/x");
+    expect(content).not.toContain("abcdefghijkl");
+    expect(content).not.toContain("session_abcd");
+  });
+
+  test("the home folder is replaced only at a path boundary", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "in /home/al/x and /home/alice/y", env: { HOME: "/home/al" } });
+    const content = JSON.parse(r.posts[0]).content as string;
+    expect(content).toContain("in ~/x and /home/alice/y");
+  });
+
+  test("a Discord webhook that can't be reached is reported, without its URL", async () => {
+    const closed = Bun.serve({ port: 0, fetch: () => new Response(null) });
+    const port = closed.port;
+    await closed.stop(true);
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "boom", env: { DUET_DISCORD_WEBHOOK: `http://127.0.0.1:${port}/secret-token-path` } });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("duet: the Discord alert failed too:");
+    expect(r.err).not.toContain("127.0.0.1");
+    expect(r.err).not.toContain("secret-token-path");
+  });
+
+  test("whitespace-only stderr falls back to stdout", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "  \n", stdout: "the real reason" });
+    expect(r.err).toContain("the real reason");
+    expect(JSON.parse(r.posts[0]).content).toContain("the real reason");
+  });
+
+  test("cutting claude's output never splits a surrogate pair", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: `a${"😀".repeat(500)}` });
+    expect(r.err).not.toContain("\uFFFD");
+    expect(JSON.parse(r.posts[0]).content).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
+  test("a Discord webhook that answers with an error is reported, without its URL", async () => {
+    const r = await runFake({ args: ["hello"], exit: 1, stderr: "boom", webhookStatus: 500 });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("duet: the Discord alert failed too: HTTP 500");
+    expect(r.err).not.toContain("127.0.0.1");
   });
 
   test("--hook with a failing claude still exits 0", async () => {
