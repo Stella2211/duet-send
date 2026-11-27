@@ -149,7 +149,7 @@ bun run check
 | `DUET_DISCORD_WEBHOOK` | 送信そのものに失敗したとき（IDが古いときなど）や、Claude Code を起動できないとき（`claude` が見つからない、起動に失敗する）に Discord に知らせてほしいとき。通知されず stderr に出るだけなのは、ルーティング表のファイルを読めなかったとき、本文が長すぎるとき、hook の50秒タイムアウトです。hook として動くときは stderr を見る人がいないので、これらは気づかれずに失敗します |
 | `DUET_TAG` | 既定のタグを `[Claude Code]` 以外にしたいとき。`--hook` では使われません（hook のタグは `[Claude Code: Stop]` で、変えるときは `--tag`） |
 | `DUET_CLAUDE_BIN` | `claude` が PATH にないとき、または定期実行するとき（手順7） |
-| `DUET_SESSION_ID` | IDそのもの。`DUET_ROUTES_FILE_ID` がないときに使い、ルーティング表のファイルを読めないときも代わりに使います（警告が出ます）。コーディネーターが変わると古くなります |
+| `DUET_SESSION_ID` | IDそのもの。`DUET_ROUTES_FILE_ID` がないときに使い、ルーティング表のファイルを使えないとき（読めない・解釈できない、既定のルートがセッションIDでない）も代わりに使います（警告が出ます）。コーディネーターが変わると古くなります |
 
 macOS（zsh）：`~/.zshrc` に次のような行を足して、新しいターミナルを開きます。Linux では、使っているシェルのファイル（たいていは `~/.bashrc`）に足します。
 
@@ -186,7 +186,7 @@ message:
 [Claude Code] duet-send のテスト
 ```
 
-`to:` はルートとそのIDを示します。`read from: the routes file (Google Drive)` ならふだんどおりです。`DUET_SESSION_ID` と出たときは、その変数からIDを読んだという意味です。ルーティング表のファイルを設定していないか、読めなかったかのどちらかです（どちらかは stderr の警告でわかります）。`updated:` は、ルーティング表に `updated_at` があるときだけ表示されます。
+`to:` はルートとそのIDを示します。`read from: the routes file (Google Drive)` ならふだんどおりです。`DUET_SESSION_ID` と出たときは、その変数からIDを読んだという意味です。ルーティング表のファイルを設定していないか、使えなかったかのどちらかです（理由は stderr の警告でわかります）。`updated:` は、ルーティング表に `updated_at` があるときだけ表示されます。
 
 エラーが出たら、下のトラブルシューティングを見てください。
 

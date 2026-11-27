@@ -8,6 +8,15 @@ export const ID_PATTERN = /^(session|cse)_[A-Za-z0-9]+$/;
 
 export type Routes = { version: 1; updatedAt?: string; default: string; routes: Map<string, string> };
 
+// Text from the routes file (route names, "updated_at") is untrusted: before it is printed,
+// control characters (C0, C1, DEL), the characters that reorder text (bidi marks and
+// overrides) and zero-width or line-separator characters are removed, so it can't move the
+// cursor, disguise other text or split an id that should be masked.
+export function printable(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\u200B-\u200D\u2060\uFEFF\u2028\u2029]/g, "");
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }

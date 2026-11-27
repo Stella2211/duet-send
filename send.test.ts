@@ -551,3 +551,100 @@ describe("arguments", () => {
     }
   });
 });
+
+// ---------- the routes file ----------
+// send.ts runs with fake-drive.preload.ts, which points Google Drive requests at a stub server
+// that answers with the given file name in Content-Disposition.
+const PRELOAD = join(import.meta.dir, "fake-drive.preload.ts");
+const ID_A = "session_aaaa0123456789";
+const ID_B = "session_bbbb0123456789";
+
+async function runRoutes(table: object | string, args: string[], env: Record<string, string> = {}) {
+  const name = typeof table === "string" ? table : JSON.stringify(table);
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => new Response("dummy", { headers: { "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}` } }),
+  });
+  try {
+    const proc = Bun.spawn([process.execPath, "--preload", PRELOAD, SEND, "--dry-run", ...args], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: testEnv({ DUET_ROUTES_FILE_ID: "testfile", FAKE_DRIVE_ORIGIN: `http://127.0.0.1:${server.port}`, ...env }),
+    });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { out, err, code: await proc.exited };
+  } finally {
+    await server.stop(true);
+  }
+}
+
+const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069\u200B-\u200D\u2060\uFEFF\u2028\u2029]/;
+
+describe("the routes file", () => {
+  test("a route named by the file is shown as its default", async () => {
+    const r = await runRoutes({ version: 1, updated_at: "2026-11-23", default: "main", routes: { main: ID_A } }, ["hi"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("to: main (session_aaaa…789)");
+    expect(r.out).toContain("updated: 2026-11-23");
+  });
+
+  test("control and bidi characters in route names and updated_at are not printed", async () => {
+    const evil = "ma\u001b[31min‮gnp\u0085";
+    const r = await runRoutes({ version: 1, updated_at: "2026\u001b[2J-11\u009B", default: evil, routes: { [evil]: ID_A } }, ["hi"]);
+    expect(r.code).toBe(0);
+    expect(r.out).not.toMatch(CONTROL);
+    expect(r.out).toContain("to: ma[31mingnp (session_aaaa…789)");
+    expect(r.out).toContain("updated: 2026[2J-11");
+  });
+
+  test("control characters in an error message are not printed", async () => {
+    const r = await runRoutes({ version: 1, default: "ma\u001bin", routes: { "ma\u001bin": ID_A } }, ["--to", "x\u001by", "hi"]);
+    expect(r.code).toBe(1);
+    expect(r.err).not.toMatch(CONTROL);
+    expect(r.err).toContain('unknown route "xy"');
+    expect(r.err).toContain("main (default)");
+  });
+
+  test("zero-width characters are removed before ids are masked, so they can't hide an id", async () => {
+    const r = await runRoutes({ version: 1, default: "main", routes: { main: ID_A } }, ["--to", "session_abcdefghijkl\u200Bmnop\u2028\uFEFFxyz", "hi"]);
+    expect(r.code).toBe(1);
+    expect(r.err).not.toMatch(CONTROL);
+    expect(r.err).not.toContain("abcdefghijkl");
+    expect(r.err).toContain("session_abcd…xyz");
+  });
+
+  test("a default route without a session id falls back to DUET_SESSION_ID, with a warning", async () => {
+    const r = await runRoutes({ version: 1, default: "main", routes: { main: "not-an-id" } }, ["hi"], { DUET_SESSION_ID: ID_B });
+    expect(r.code).toBe(0);
+    expect(r.err).toContain('route "main" does not contain a session id');
+    expect(r.err).toContain("using DUET_SESSION_ID instead");
+    expect(r.out).toContain("to: session_bbbb…789");
+  });
+
+  test("a file name that isn't JSON falls back the same way", async () => {
+    const r = await runRoutes("{nope", ["hi"], { DUET_SESSION_ID: ID_B });
+    expect(r.code).toBe(0);
+    expect(r.err).toContain("using DUET_SESSION_ID instead");
+    expect(r.out).toContain("to: session_bbbb…789");
+  });
+
+  test("without DUET_SESSION_ID a default route without an id fails", async () => {
+    const r = await runRoutes({ version: 1, default: "main", routes: { main: "not-an-id" } }, ["hi"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("does not contain a session id");
+  });
+
+  test("--to never falls back: an unknown route fails even with DUET_SESSION_ID", async () => {
+    const r = await runRoutes({ version: 1, default: "main", routes: { main: ID_A } }, ["--to", "nope", "hi"], { DUET_SESSION_ID: ID_B });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('unknown route "nope"');
+    expect(r.out).toBe("");
+  });
+
+  test("--to never falls back: a route without a session id fails even with DUET_SESSION_ID", async () => {
+    const r = await runRoutes({ version: 1, default: "main", routes: { main: ID_A, work: "x" } }, ["--to", "work", "hi"], { DUET_SESSION_ID: ID_B });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('route "work" does not contain a session id');
+  });
+});

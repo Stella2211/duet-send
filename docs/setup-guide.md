@@ -149,7 +149,7 @@ bun run check
 | `DUET_DISCORD_WEBHOOK` | You want a Discord alert when the send itself fails (for example a stale id), or when Claude Code can't be started (`claude` not found, or it fails to start). Not alerted, only printed to stderr: a routes file that can't be read, a message that is too long, and the 50 second hook timeout. In hook mode nobody sees stderr, so those fail silently |
 | `DUET_TAG` | You want a default tag other than `[Claude Code]`. `--hook` doesn't use it (its tag is `[Claude Code: Stop]`; change that with `--tag`) |
 | `DUET_CLAUDE_BIN` | `claude` isn't on PATH, or you run duet-send on a schedule (step 7) |
-| `DUET_SESSION_ID` | The id itself. Used when `DUET_ROUTES_FILE_ID` is not set, and as a fallback (with a warning) when the routes file can't be read. It goes stale when the coordinator changes |
+| `DUET_SESSION_ID` | The id itself. Used when `DUET_ROUTES_FILE_ID` is not set, and as a fallback (with a warning) when the routes file can't be used (it can't be read or parsed, or its default route isn't a session id). It goes stale when the coordinator changes |
 
 macOS (zsh): add lines like this to `~/.zshrc`, then open a new terminal. On Linux, use your shell's file instead (usually `~/.bashrc`).
 
@@ -186,7 +186,7 @@ message:
 [Claude Code] duet-send test
 ```
 
-`to:` shows the route and its id. `read from: the routes file (Google Drive)` is the normal case. `DUET_SESSION_ID` means the id came from that variable instead: it is not set up for the routes file, or the file couldn't be read (a warning on stderr says which). `updated:` is shown only when the routes table has `updated_at`.
+`to:` shows the route and its id. `read from: the routes file (Google Drive)` is the normal case. `DUET_SESSION_ID` means the id came from that variable instead: it is not set up for the routes file, or the file couldn't be used (a warning on stderr says why). `updated:` is shown only when the routes table has `updated_at`.
 
 If you see an error, go to Troubleshooting below.
 
