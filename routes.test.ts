@@ -91,6 +91,10 @@ describe("fileNameFromDisposition", () => {
   test("an escaped quote before ; inside the name doesn't end it", () => {
     expect(fileNameFromDisposition('attachment; filename="a\\"; b=c.json"')).toBe('a"; b=c.json');
   });
+  test("a quoted filename*=\"UTF-8''...\" is accepted", () => {
+    const h = `attachment; filename*="UTF-8''${encodeURIComponent(json)}"`;
+    expect(fileNameFromDisposition(h)).toBe(json);
+  });
   test("filename* written inside the quoted name is ignored", () => {
     const json = '{"version":1,"x":"a;filename*=UTF-8\'\'evil"}';
     expect(fileNameFromDisposition(`attachment; filename="${json}.json"`)).toBe(`${json}.json`);

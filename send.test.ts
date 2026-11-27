@@ -228,7 +228,7 @@ printf '%s' "$FAKE_STDERR" >&2
 exit "\${FAKE_EXIT:-0}"
 `;
 
-type FakeOpts = { webhookStatus?: number; args?: string[]; stdin?: object; env?: Record<string, string>; exit?: number; stdout?: string; stderr?: string };
+type FakeOpts = { routesTable?: object; webhookStatus?: number; args?: string[]; stdin?: object; env?: Record<string, string>; exit?: number; stdout?: string; stderr?: string };
 
 async function runFake(o: FakeOpts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "duet-send-test-"));
@@ -240,11 +240,17 @@ async function runFake(o: FakeOpts = {}) {
       return new Response(null, { status: o.webhookStatus ?? 204 });
     },
   });
+  const drive = o.routesTable
+    ? Bun.serve({
+        port: 0,
+        fetch: () => new Response("dummy", { headers: { "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(JSON.stringify(o.routesTable))}` } }),
+      })
+    : null;
   try {
     const bin = join(dir, "claude");
     writeFileSync(bin, FAKE_CLAUDE);
     chmodSync(bin, 0o755);
-    const proc = Bun.spawn([process.execPath, SEND, ...(o.args ?? [])], {
+    const proc = Bun.spawn([process.execPath, ...(drive ? ["--preload", join(import.meta.dir, "fake-drive.preload.ts")] : []), SEND, ...(o.args ?? [])], {
       stdin: o.stdin ? new Blob([JSON.stringify(o.stdin)]) : "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -256,6 +262,7 @@ async function runFake(o: FakeOpts = {}) {
         FAKE_EXIT: String(o.exit ?? 0),
         FAKE_STDOUT: o.stdout ?? "",
         FAKE_STDERR: o.stderr ?? "",
+        ...(drive ? { DUET_ROUTES_FILE_ID: "testfile", FAKE_DRIVE_ORIGIN: `http://127.0.0.1:${drive.port}` } : {}),
         ...o.env,
       }),
     });
@@ -266,6 +273,7 @@ async function runFake(o: FakeOpts = {}) {
     return { out, err, code, posts, argv: argv === null ? null : argv.split("\0").slice(0, -1), hookEnv: read("hook") };
   } finally {
     await server.stop(true);
+    await drive?.stop(true);
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -286,6 +294,15 @@ describe.skipIf(process.platform === "win32")("sending", () => {
     expect(r.out).toBe("duet: sent to session_test…789\n");
     expect(r.out).not.toContain(FULL_ID);
     expect(r.posts.length).toBe(0);
+  });
+
+  test("success with a routes file names the route", async () => {
+    const table = { version: 1, default: "main", routes: { main: "session_aaaa0123456789", work: "cse_bbbb0123456789" } };
+    const a = await runFake({ args: ["hello"], routesTable: table });
+    expect(a.out).toBe("duet: sent to main (session_aaaa…789)\n");
+    const b = await runFake({ args: ["--to", "work", "hello"], routesTable: table });
+    expect(b.out).toBe("duet: sent to work (cse_bbbb…789)\n");
+    expect(b.argv?.slice(1, 3)).toEqual(["--cloud", "cse_bbbb0123456789"]);
   });
 
   test("--verbose shows the full id and claude's output", async () => {

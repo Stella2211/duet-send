@@ -19,7 +19,7 @@
  */
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, printable, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
+import { ID_PATTERN, RoutesError, printable, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
@@ -188,8 +188,13 @@ async function resolveSessionId(route?: string): Promise<Resolved> {
       "no destination: set DUET_ROUTES_FILE_ID to the Drive file id of your routes file (see the setup guide), or set DUET_SESSION_ID.",
     );
   }
-  if (!FILE_ID_PATTERN.test(fileId)) fail("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
-  const source = driveTitleRoutesSource(fileId);
+  let source;
+  try {
+    source = driveTitleRoutesSource(fileId); // checks that the id looks like a Drive file id
+  } catch (e) {
+    if (e instanceof RoutesError) fail("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
+    throw e;
+  }
   // Problems with the routes file itself (it can't be read, or the default route has no valid
   // id): without --to they fall back to DUET_SESSION_ID when it is set. Names in the message
   // come from the file, so control characters are stripped before it is printed.
@@ -242,11 +247,15 @@ function resolveClaude(): { bin: string } | { error: string; path?: string } {
     if (!bin) return { error: "claude was not found (check PATH or set DUET_CLAUDE_BIN)" };
   }
   // npm's claude.cmd can only be started through cmd.exe, which could mangle the
-  // message or interpret it as a command, so it is refused.
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) {
+  // message or interpret it as a command, so it is refused. A claude.exe elsewhere on
+  // PATH (the native Claude Code) is used instead when there is one.
+  const isCmd = (p: string) => /\.(cmd|bat)$/i.test(p);
+  if (process.platform === "win32" && isCmd(bin)) {
+    const exe = !env || env === "claude" ? Bun.which("claude.exe") : null;
+    if (exe && !isCmd(exe)) return { bin: exe };
     return {
       error:
-        `${bin} is a .cmd file and cannot be called safely. Install the native Claude Code (claude.exe) ` +
+        `${bin} is a .cmd or .bat file and cannot be called safely. Install the native Claude Code (claude.exe) ` +
         "or point DUET_CLAUDE_BIN to claude.exe.",
       path: bin,
     };
@@ -406,8 +415,8 @@ async function main() {
     }
     return exit(1);
   }
-  if ("error" in resolved) await cannotStart(resolved.error, resolved.path);
-  const claude = (resolved as { bin: string }).bin;
+  if ("error" in resolved) return cannotStart(resolved.error, resolved.path);
+  const claude = resolved.bin;
 
   if (args.dryRun) {
     console.log(
@@ -438,7 +447,7 @@ async function main() {
   if (code === 0) {
     // claude prints the session id and its URL; show them only with --verbose.
     if (args.verbose && stdout.trim()) log(stdout.trim());
-    log(`duet: sent to ${shownId}`);
+    log(`duet: sent to ${shownTo}`);
     exit(0);
   }
 

@@ -79,7 +79,7 @@ const DRIVE_ORIGIN = "https://drive.google.com";
 // Header values arrive as bytes read one per character; a UTF-8 name (route names in
 // Japanese, for example) is turned back into text here.
 function utf8FromBytes(text: string): string {
-  if (!/[\u0080-ÿ]/.test(text) || /[^\u0000-ÿ]/.test(text)) return text;
+  if (!/[\u0080-\u00FF]/.test(text) || /[^\u0000-\u00FF]/.test(text)) return text;
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(text, (c) => c.charCodeAt(0)));
   } catch {
@@ -94,12 +94,13 @@ export function fileNameFromDisposition(header: string): string | null {
   const quoted = quotedFileName(header);
   // filename* is looked for outside the quoted name, so text inside the name can't pose as it.
   const outside = quoted ? header.slice(0, quoted.start) + header.slice(quoted.end) : header;
-  const star = /(?:^|;)\s*filename\*\s*=\s*([^']*)'[^']*'([^;]*)/i.exec(outside);
+  const star = /(?:^|;)\s*filename\*\s*=\s*"?([^'"]*)'[^']*'([^;]*)/i.exec(outside);
   if (star) {
     const charset = star[1].trim().toLowerCase();
     if (charset === "utf-8" || charset === "") {
       try {
-        return decodeURIComponent(star[2].trim());
+        // (a quoted value, which the RFC doesn't allow, is accepted too: its closing quote is dropped)
+        return decodeURIComponent(star[2].trim().replace(/"$/, ""));
       } catch {}
     }
   }
