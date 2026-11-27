@@ -1,20 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SEND = new URL("./send.ts", import.meta.url).pathname;
+const SEND = join(import.meta.dir, "send.ts");
 const MAX_LEN = 8000;
 const TAG = "[Claude Code: Stop] ";
+
+// The environment for a send.ts run: the current one without the variables send.ts reads,
+// so a developer's own setup never leaks into a test; `over` sets what a test needs.
+const DUET_VARS = ["DUET_TAG", "DUET_DISCORD_WEBHOOK", "DUET_ROUTES_FILE_ID", "DUET_SESSION_ID", "DUET_HOOK", "DUET_CLAUDE_BIN"];
+function testEnv(over: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !DUET_VARS.includes(k)) env[k] = v;
+  return { DUET_CLAUDE_BIN: process.execPath, ...env, ...over };
+}
 
 // Runs `send.ts --hook --dry-run` with a hook JSON on stdin. The routes file is unset and a
 // dummy session id is used, so nothing is read from Google Drive and nothing is sent.
 async function hookDryRun(input: object): Promise<string> {
-  const proc = Bun.spawn(["bun", SEND, "--hook", "--dry-run"], {
+  const proc = Bun.spawn([process.execPath, SEND, "--hook", "--dry-run"], {
     stdin: new Blob([JSON.stringify(input)]),
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_ROUTES_FILE_ID: "", DUET_SESSION_ID: "session_test0123456789", DUET_CLAUDE_BIN: process.execPath, DUET_HOOK: "" },
+    env: testEnv({ DUET_SESSION_ID: "session_test0123456789" }),
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
@@ -74,11 +83,11 @@ describe("--hook: the last message", () => {
 
 // Runs `send.ts --dry-run` with the given env overrides and returns the result.
 async function dryRun(env: Record<string, string>, extra: string[] = []) {
-  const proc = Bun.spawn(["bun", SEND, "--dry-run", ...extra, "hi"], {
+  const proc = Bun.spawn([process.execPath, SEND, "--dry-run", ...extra, "hi"], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, DUET_CLAUDE_BIN: process.execPath, DUET_HOOK: "", ...env },
+    env: testEnv(env),
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { out, err, code: await proc.exited };
@@ -124,18 +133,15 @@ async function runNoClaude(bin: string, extra: string[]) {
   });
   try {
     const hook = extra.includes("--hook");
-    const proc = Bun.spawn(["bun", SEND, ...extra, ...(hook ? [] : ["hi"])], {
+    const proc = Bun.spawn([process.execPath, SEND, ...extra, ...(hook ? [] : ["hi"])], {
       stdin: hook ? new Blob([JSON.stringify({ hook_event_name: "Stop", cwd: "/tmp/t", last_assistant_message: "x" })]) : "ignore",
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        ...process.env,
-        DUET_ROUTES_FILE_ID: "",
+      env: testEnv({
         DUET_SESSION_ID: FULL_ID,
         DUET_CLAUDE_BIN: bin,
-        DUET_HOOK: "",
         DUET_DISCORD_WEBHOOK: `http://127.0.0.1:${server.port}/hook`,
-      },
+      }),
     });
     const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { out, err, code: await proc.exited, posts };
@@ -206,6 +212,165 @@ describe("claude can't be started", () => {
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------- the send path, with a fake claude ----------
+// The fake records its arguments (NUL-separated) and DUET_HOOK, prints FAKE_STDOUT and
+// FAKE_STDERR, and exits with FAKE_EXIT. A fake Discord webhook records the alerts.
+// Nothing real is sent. POSIX only, like the "isn't executable" tests above.
+const FAKE_CLAUDE = `#!/bin/sh
+{ for a in "$@"; do printf '%s\\0' "$a"; done; } > "$FAKE_DIR/argv"
+printf '%s' "$DUET_HOOK" > "$FAKE_DIR/hook"
+printf '%s' "$FAKE_STDOUT"
+printf '%s' "$FAKE_STDERR" >&2
+exit "\${FAKE_EXIT:-0}"
+`;
+
+type FakeOpts = { args?: string[]; stdin?: object; env?: Record<string, string>; exit?: number; stdout?: string; stderr?: string };
+
+async function runFake(o: FakeOpts = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "duet-send-test-"));
+  const posts: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      posts.push(await req.text());
+      return new Response(null, { status: 204 });
+    },
+  });
+  try {
+    const bin = join(dir, "claude");
+    writeFileSync(bin, FAKE_CLAUDE);
+    chmodSync(bin, 0o755);
+    const proc = Bun.spawn([process.execPath, SEND, ...(o.args ?? [])], {
+      stdin: o.stdin ? new Blob([JSON.stringify(o.stdin)]) : "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: testEnv({
+        DUET_SESSION_ID: FULL_ID,
+        DUET_CLAUDE_BIN: bin,
+        DUET_DISCORD_WEBHOOK: `http://127.0.0.1:${server.port}/hook`,
+        FAKE_DIR: dir,
+        FAKE_EXIT: String(o.exit ?? 0),
+        FAKE_STDOUT: o.stdout ?? "",
+        FAKE_STDERR: o.stderr ?? "",
+        ...o.env,
+      }),
+    });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const code = await proc.exited;
+    const read = (name: string) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8") : null);
+    const argv = read("argv");
+    return { out, err, code, posts, argv: argv === null ? null : argv.split("\0").slice(0, -1), hookEnv: read("hook") };
+  } finally {
+    await server.stop(true);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const hookInput = (extra: object = {}) => ({ hook_event_name: "Stop", cwd: "/tmp/proj", last_assistant_message: "done", ...extra });
+
+describe.skipIf(process.platform === "win32")("sending", () => {
+  test("starts claude with -p <tag message> --cloud <id>, marked DUET_HOOK=1", async () => {
+    const r = await runFake({ args: ["hello"] });
+    expect(r.code).toBe(0);
+    expect(r.argv).toEqual(["-p", "[Claude Code] hello", "--cloud", FULL_ID]);
+    expect(r.hookEnv).toBe("1");
+  });
+
+  test("success: one line with the masked id, exit 0, nothing on Discord", async () => {
+    const r = await runFake({ args: ["hello"], stdout: "https://example.invalid/session_secret0123456789\n" });
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("duet: sent to session_test…789\n");
+    expect(r.out).not.toContain(FULL_ID);
+    expect(r.posts.length).toBe(0);
+  });
+
+  test("--verbose shows the full id and claude's output", async () => {
+    const r = await runFake({ args: ["--verbose", "hello"], stdout: "queued" });
+    expect(r.out).toContain("queued");
+    expect(r.out).toContain(`duet: sent to ${FULL_ID}`);
+  });
+
+  test("claude exits non-zero: exit 1, the id is masked in stderr, one alert", async () => {
+    const r = await runFake({ args: ["hello"], exit: 3, stderr: `Session ${FULL_ID} is archived` });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("duet: sending failed (exit 3)");
+    expect(r.err).toContain("session_test…789");
+    expect(r.err).not.toContain(FULL_ID);
+    expect(r.posts.length).toBe(1);
+    const content = JSON.parse(r.posts[0]).content as string;
+    expect(content).toContain("sending to Claude Duet failed (exit 3)");
+    expect(content).not.toContain(FULL_ID);
+  });
+
+  test("--hook with a failing claude still exits 0", async () => {
+    const r = await runFake({ args: ["--hook"], stdin: hookInput(), exit: 1, stderr: "boom" });
+    expect(r.code).toBe(0);
+    expect(r.err).toContain("sending failed");
+  });
+
+  test("--hook sends the Stop notification with the hook tag", async () => {
+    const r = await runFake({ args: ["--hook"], stdin: hookInput() });
+    expect(r.code).toBe(0);
+    expect(r.argv?.[1]).toBe("[Claude Code: Stop] Claude Code finished responding in proj.\n\nLast message:\ndone");
+    expect(r.hookEnv).toBe("1");
+  });
+
+  test("--hook sends the StopFailure text", async () => {
+    const r = await runFake({ args: ["--hook"], stdin: hookInput({ hook_event_name: "StopFailure", error: "rate_limit" }) });
+    expect(r.argv?.[1]).toBe("[Claude Code: Stop] Claude Code stopped because of an API error (rate_limit) in proj.");
+  });
+
+  test("--hook skips a turn that Claude continues because of a Stop hook", async () => {
+    const r = await runFake({ args: ["--hook"], stdin: hookInput({ stop_hook_active: true }) });
+    expect(r.code).toBe(0);
+    expect(r.argv).toBeNull();
+    expect(r.posts.length).toBe(0);
+  });
+
+  test("--hook skips when DUET_HOOK=1 is set (the hook can't trigger itself)", async () => {
+    const r = await runFake({ args: ["--hook"], stdin: hookInput(), env: { DUET_HOOK: "1" } });
+    expect(r.code).toBe(0);
+    expect(r.argv).toBeNull();
+  });
+
+  test("a message over the limit: exit 1, claude never starts", async () => {
+    const r = await runFake({ args: ["a".repeat(MAX_LEN + 1)] });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("the message is too long");
+    expect(r.argv).toBeNull();
+  });
+
+  test("a message of exactly the limit is sent", async () => {
+    const r = await runFake({ args: ["a".repeat(MAX_LEN)] });
+    expect(r.code).toBe(0);
+    expect(r.argv).not.toBeNull();
+  });
+
+  test("an empty message: exit 2, claude never starts", async () => {
+    const r = await runFake({ args: [""] });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("the message is empty");
+    expect(r.argv).toBeNull();
+  });
+
+  test("DUET_TAG sets the tag", async () => {
+    const r = await runFake({ args: ["hello"], env: { DUET_TAG: "[Bot]" } });
+    expect(r.argv?.[1]).toBe("[Bot] hello");
+  });
+
+  test("--tag wins over DUET_TAG", async () => {
+    const r = await runFake({ args: ["--tag", "[Cli]", "hello"], env: { DUET_TAG: "[Bot]" } });
+    expect(r.argv?.[1]).toBe("[Cli] hello");
+  });
+
+  test("an empty or blank tag falls back to the default", async () => {
+    for (const tag of ["", "   "]) {
+      const r = await runFake({ args: ["hello"], env: { DUET_TAG: tag } });
+      expect(r.argv?.[1]).toBe("[Claude Code] hello");
     }
   });
 });
