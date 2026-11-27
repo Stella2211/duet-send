@@ -6,7 +6,7 @@ duet-send is unofficial. Some of the steps below (`get_session` and so on) rely 
 
 ## What duet-send needs from you
 
-duet-send runs on the user's computer and sends messages to you with `claude -p "<message>" --cloud <your session id>`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in a **routes table**: one line of JSON that is the **file name** (title) of one file in the user's Google Drive.
+duet-send runs on the user's computer and sends messages to you with `claude -p --cloud <your session id> -- "<message>"`. Your session id changes when you are replaced by a new coordinator session, so scripts can't hardcode it. Instead, you keep your **current session id** in a **routes table**: one line of JSON that is the **file name** (title) of one file in the user's Google Drive.
 
 - The table: `{"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"<your session id>"}}`. Use straight quotes, no line breaks, and set `updated_at` to now in UTC (ISO 8601).
 - `main` is you, the coordinator. `default` names the route duet-send uses when none is chosen. Add other routes only when the user asks. duet-send sends to another route with `--to <route>`.

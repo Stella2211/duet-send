@@ -22,7 +22,7 @@ macOS、Linux、Windows に duet-send を入れる手順です。人が読みな
         ▼
    duet-send ── 読む ──▶ ルーティング表のファイル名（Google ドライブ、リンク共有）
         │
-        │  claude -p "[タグ] メッセージ" --cloud <セッションID>
+        │  claude -p --cloud <セッションID> -- "[タグ] メッセージ"
         ▼
  Claude Duet のコーディネーター（クラウドの Claude Code セッション）
 ```
