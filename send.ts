@@ -19,7 +19,7 @@
  */
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
+import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, printable, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
@@ -189,25 +189,32 @@ async function resolveSessionId(route?: string): Promise<Resolved> {
     );
   }
   if (!FILE_ID_PATTERN.test(fileId)) fail("DUET_ROUTES_FILE_ID does not look like a Google Drive file id");
-
   const source = driveTitleRoutesSource(fileId);
+  // Problems with the routes file itself (it can't be read, or the default route has no valid
+  // id): without --to they fall back to DUET_SESSION_ID when it is set. Names in the message
+  // come from the file, so control characters are stripped before it is printed.
+  const problem = (e: RoutesError) => maskIdsIn(printable(e.message));
+  const fallback = (e: RoutesError): Resolved => {
+    console.error(`duet: ${problem(e).replace(/\.$/, "")}; using DUET_SESSION_ID instead.`);
+    return { id: parseId(direct!, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes file unusable)" };
+  };
+  const canFallBack = Boolean(direct) && route === undefined;
+
   let routes;
   try {
     routes = await loadRoutes(source);
   } catch (e) {
     if (!(e instanceof RoutesError)) throw e;
-    if (direct && route === undefined) {
-      console.error(`duet: ${maskIdsIn(e.message).replace(/\.$/, "")}; using DUET_SESSION_ID instead.`);
-      return { id: parseId(direct, "DUET_SESSION_ID"), source: "DUET_SESSION_ID (routes file unreadable)" };
-    }
-    fail(maskIdsIn(e.message));
+    if (canFallBack) return fallback(e);
+    fail(problem(e));
   }
   try {
     const r = resolveRoute(routes, route);
-    return { id: r.id, source: source.label, route: r.name, updatedAt: routes.updatedAt };
+    return { id: r.id, source: source.label, route: printable(r.name), updatedAt: routes.updatedAt && printable(routes.updatedAt) };
   } catch (e) {
-    if (e instanceof RoutesError) fail(maskIdsIn(e.message));
-    throw e;
+    if (!(e instanceof RoutesError)) throw e;
+    if (canFallBack) return fallback(e);
+    fail(problem(e));
   }
 }
 
