@@ -133,12 +133,12 @@ cd duet-send
 
 git がない場合：https://github.com/Stella2211/duet-send を開き、**Code → Download ZIP** を選んで展開し、展開したフォルダでターミナルを開きます。
 
-duet-send は実行時に依存パッケージを使いません。`bun install` は任意で、エディタ用の型定義が入るだけです。
+duet-send は実行時に依存パッケージを使いません。`bun install` は任意で、エディタや `bun run typecheck` が使う型定義と TypeScript が入るだけです。
 
 スクリプトがビルドできるか確認します。
 
 ```sh
-bun run check
+bun run build
 ```
 
 ## 5. 環境変数を設定する（必要なものだけ）

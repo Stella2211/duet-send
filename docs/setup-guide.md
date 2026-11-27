@@ -133,12 +133,12 @@ cd duet-send
 
 Without git: open https://github.com/Stella2211/duet-send, choose **Code → Download ZIP**, extract it, and open a terminal in the extracted folder.
 
-duet-send has no runtime dependencies. `bun install` is optional; it only adds type definitions for editors.
+duet-send has no runtime dependencies. `bun install` is optional; it only adds the type definitions and TypeScript that editors and `bun run typecheck` use.
 
 Check that the script builds:
 
 ```sh
-bun run check
+bun run build
 ```
 
 ## 5. Set environment variables (only the ones you need)
