@@ -417,13 +417,12 @@ Do this once per other chat:
 2. Paste this into that chat, with the two placeholders filled in:
 
 ```
-Please add this chat's route to the duet-send routes table, and check your own session id every hour.
+Please add this chat's route to the duet-send routes table.
 - The routes table is one line of JSON in the file name of a Google Drive file (file id: <ROUTES_FILE_ID>). This chat's route name is "<ROUTE_NAME>".
 - Read your own session id with get_session (no session_id).
 - Right before writing, read the file's current title and etag from its metadata, and change only "<ROUTE_NAME>" in routes and updated_at. Don't change any other route. Pass the etag you read to the update, and if it fails, read again and retry. Don't create a new file.
 - After writing, read the file name back and check that it is valid JSON and holds your id.
-- Create a routine that posts only one fixed line in this chat once an hour (for example: This is the scheduled signal for the session-id check.). When that line arrives, do the check above, and if the id hasn't changed, do nothing.
-- Save the file id, the route name and the fixed line in memory.
+- Save the file id and the route name in memory, and do the check above at the start of every new session.
 ```
 
 3. Use it: `bun run duet --to <route> "message"`.
@@ -432,7 +431,7 @@ Several sessions write the same file name, so they must not overwrite each other
 
 ### Skip the approval on every rename
 
-By default, a coordinator asks you before each rename, so an hourly check stalls until you answer. Claude Duet has "rules" for this. In the chat, say in your own words, for example:
+By default, a coordinator asks you before each rename, so each rename waits until you answer. Claude Duet has "rules" for this. In the chat, say in your own words, for example:
 
 ```
 You don't need to ask me each time before renaming the duet-send routes file in Drive to update session ids.
@@ -476,7 +475,7 @@ The request to Google Drive failed before any answer came, usually because the n
 Google Drive didn't answer in time. Check your network and try again. If you set `DUET_SESSION_ID`, duet-send uses it with a warning.
 
 **`cloud session session_… is archived and cannot accept new messages` or `Session not found`**
-The coordinator has changed and the routes file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and renames the routes file. If you set up the hourly wake signal, this fixes itself within about an hour. (If it doesn't, ask the coordinator to look at the routine's prompt: an older version had the routine check the id itself, which fails silently.) If you use `DUET_SESSION_ID`, update it.
+The coordinator has changed and the routes file still has the old id. Open Duet and say anything; the new coordinator checks its id when it starts and renames the routes file. If you use `DUET_SESSION_ID`, update it.
 
 **`Unable to get organization UUID` or "Cloud sessions need a claude.ai sign-in"**
 Run `claude auth login` and sign in with your Claude account. An API key is not enough.

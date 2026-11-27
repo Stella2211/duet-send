@@ -27,7 +27,7 @@ Claude Duet には、外からコーディネーターにメッセージを入�
 
 このリポジトリのリンクをAIに渡して、次の順で導入を頼んでください。
 
-1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿って、Google ドライブに `duet-send` フォルダを作り、その中にルーティング表のファイルと、フォルダの説明を書いた短い README を置きます。Google ドライブに書く前に確認し、ファイルをリンクで共有する（閲覧者のみ）ようあなたに頼み、ファイルの Drive ID を教えます。1時間ごとに自分のIDを確かめ直すための合図（定期実行）を作る前にも確認します。
+1. **Claude Duet（メインのチャット）で**：「https://github.com/Stella2211/duet-send の duet-send を設定して」と頼みます。コーディネーターは [DUET_INSTRUCTIONS.md](DUET_INSTRUCTIONS.md) に沿って、Google ドライブに `duet-send` フォルダを作り、その中にルーティング表のファイルと、フォルダの説明を書いた短い README を置きます。Google ドライブに書く前に確認し、ファイルをリンクで共有する（閲覧者のみ）ようあなたに頼み、ファイルの Drive ID を教えます。
 2. **手元のパソコンの Claude Code で**：「https://github.com/Stella2211/duet-send の duet-send を docs/setup-guide.ja.md に沿って入れて」と頼みます。足りないものを入れ、このリポジトリを取ってきて、`DUET_ROUTES_FILE_ID` を設定し（あなたの了承を得て）、送信のリハーサル（dry run）まで行います。
 
 ## 手で導入する
