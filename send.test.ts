@@ -273,10 +273,10 @@ async function runFake(o: FakeOpts = {}) {
 const hookInput = (extra: object = {}) => ({ hook_event_name: "Stop", cwd: "/tmp/proj", last_assistant_message: "done", ...extra });
 
 describe.skipIf(process.platform === "win32")("sending", () => {
-  test("starts claude with -p <tag message> --cloud <id>, marked DUET_HOOK=1", async () => {
+  test("starts claude with -p --cloud <id> -- <tag message>, marked DUET_HOOK=1", async () => {
     const r = await runFake({ args: ["hello"] });
     expect(r.code).toBe(0);
-    expect(r.argv).toEqual(["-p", "[Claude Code] hello", "--cloud", FULL_ID]);
+    expect(r.argv).toEqual(["-p", "--cloud", FULL_ID, "--", "[Claude Code] hello"]);
     expect(r.hookEnv).toBe("1");
   });
 
@@ -315,13 +315,13 @@ describe.skipIf(process.platform === "win32")("sending", () => {
   test("--hook sends the Stop notification with the hook tag", async () => {
     const r = await runFake({ args: ["--hook"], stdin: hookInput() });
     expect(r.code).toBe(0);
-    expect(r.argv?.[1]).toBe("[Claude Code: Stop] Claude Code finished responding in proj.\n\nLast message:\ndone");
+    expect(r.argv?.[4]).toBe("[Claude Code: Stop] Claude Code finished responding in proj.\n\nLast message:\ndone");
     expect(r.hookEnv).toBe("1");
   });
 
   test("--hook sends the StopFailure text", async () => {
     const r = await runFake({ args: ["--hook"], stdin: hookInput({ hook_event_name: "StopFailure", error: "rate_limit" }) });
-    expect(r.argv?.[1]).toBe("[Claude Code: Stop] Claude Code stopped because of an API error (rate_limit) in proj.");
+    expect(r.argv?.[4]).toBe("[Claude Code: Stop] Claude Code stopped because of an API error (rate_limit) in proj.");
   });
 
   test("--hook skips a turn that Claude continues because of a Stop hook", async () => {
@@ -359,18 +359,26 @@ describe.skipIf(process.platform === "win32")("sending", () => {
 
   test("DUET_TAG sets the tag", async () => {
     const r = await runFake({ args: ["hello"], env: { DUET_TAG: "[Bot]" } });
-    expect(r.argv?.[1]).toBe("[Bot] hello");
+    expect(r.argv?.[4]).toBe("[Bot] hello");
   });
 
   test("--tag wins over DUET_TAG", async () => {
     const r = await runFake({ args: ["--tag", "[Cli]", "hello"], env: { DUET_TAG: "[Bot]" } });
-    expect(r.argv?.[1]).toBe("[Cli] hello");
+    expect(r.argv?.[4]).toBe("[Cli] hello");
+  });
+
+  test("a tag or message starting with - is passed after --, never as a claude option", async () => {
+    const r = await runFake({ args: ["--tag", "--model", "--", "-5 tests failed"] });
+    expect(r.code).toBe(0);
+    expect(r.argv).toEqual(["-p", "--cloud", FULL_ID, "--", "--model -5 tests failed"]);
+    const d = await runFake({ args: ["hello"], env: { DUET_TAG: "-x" } });
+    expect(d.argv?.slice(-2)).toEqual(["--", "-x hello"]);
   });
 
   test("an empty or blank tag falls back to the default", async () => {
     for (const tag of ["", "   "]) {
       const r = await runFake({ args: ["hello"], env: { DUET_TAG: tag } });
-      expect(r.argv?.[1]).toBe("[Claude Code] hello");
+      expect(r.argv?.[4]).toBe("[Claude Code] hello");
     }
   });
 });

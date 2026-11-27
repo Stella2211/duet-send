@@ -219,7 +219,7 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 
 If the routes table has more than one route, `--to <route>` sends to that route instead of the default one, for example `bun /path/to/duet-send/send.ts --to work --tag "[Nightly build]" "Build failed"`. With `--to`, duet-send never falls back to `DUET_SESSION_ID`; if the route can't be read, nothing is sent.
 
-If the message may start with `-`, put `--` before it: `bun run duet -- "-5 tests failed"`. Without `--`, an argument that starts with `-` and isn't an option duet-send knows (a typo such as `--dry-rnu`, say) is refused with exit code 2 instead of being sent as text. `--tag=<tag>` and `--to=<route>` work as well as `--tag <tag>` and `--to <route>`. (The tag is always put in front, so the message can never be read as a flag by `claude`.)
+If the message may start with `-`, put `--` before it: `bun run duet -- "-5 tests failed"`. Without `--`, an argument that starts with `-` and isn't an option duet-send knows (a typo such as `--dry-rnu`, say) is refused with exit code 2 instead of being sent as text. `--tag=<tag>` and `--to=<route>` work as well as `--tag <tag>` and `--to <route>`. (Either way, duet-send hands the message to `claude` after `--`, so it is never read as one of `claude`'s own options.)
 
 **Scheduled runs (cron, launchd, Task Scheduler, a bot service).** These don't read `~/.zshrc` or your user PATH. Use full paths everywhere, and set the variables in the job itself:
 

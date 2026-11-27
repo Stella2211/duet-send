@@ -331,7 +331,8 @@ if (!text) fail('the message is empty. Usage: bun run duet "message"', 2);
 text = sanitize(text);
 if (text.length > MAX_LEN) fail(`the message is too long (${text.length} characters, limit ${MAX_LEN})`);
 
-// Prefix the tag. This also keeps a body starting with "-" from being read as a flag.
+// Prefix the tag. The message is passed to claude after "--", so even a tag or body starting
+// with "-" is never read as one of claude's options.
 const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
 const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
 const message = `${tag} ${text}`;
@@ -370,7 +371,7 @@ if (args.dryRun) {
 
 let proc: ReturnType<typeof Bun.spawn<{ stdout: "pipe"; stderr: "pipe"; stdin: "ignore" }>>;
 try {
-  proc = Bun.spawn([claude, "-p", message, "--cloud", id], {
+  proc = Bun.spawn([claude, "-p", "--cloud", id, "--", message], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
