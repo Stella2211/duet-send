@@ -13,12 +13,17 @@
   "bugs": {
     "url": "https://github.com/Stella2211/duet-send/issues"
   },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
   "scripts": {
     "duet": "bun run send.ts",
-    "check": "bun build send.ts --target=bun --outdir=dist",
+    "build": "bun build send.ts --target=bun --outdir=dist",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
   }
 }

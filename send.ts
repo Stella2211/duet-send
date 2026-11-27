@@ -416,7 +416,7 @@ async function main() {
     exit(0);
   }
 
-  let proc: ReturnType<typeof Bun.spawn<{ stdout: "pipe"; stderr: "pipe"; stdin: "ignore" }>>;
+  let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try {
     proc = Bun.spawn([claude, "-p", "--cloud", id, "--", message], {
       stdout: "pipe",
@@ -426,7 +426,7 @@ async function main() {
       env: { ...process.env, DUET_HOOK: "1" },
     });
   } catch (e) {
-    await cannotStart(`could not start claude (${claude}): ${e instanceof Error ? e.message : String(e)}`, claude);
+    return cannotStart(`could not start claude (${claude}): ${e instanceof Error ? e.message : String(e)}`, claude);
   }
   children.add(proc);
   const [stdout, stderr, code] = await Promise.all([
