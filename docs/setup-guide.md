@@ -111,7 +111,7 @@ claude auth login
 claude --version
 ```
 
-**Windows note.** duet-send needs the native `claude.exe`. The npm package (`npm install -g @anthropic-ai/claude-code`) puts a `claude.cmd` launcher on your PATH, and duet-send refuses to run it, because a message passed through `cmd.exe` could be mangled or run as a command. Check what `claude` resolves to:
+**Windows note.** duet-send needs the native `claude.exe`. The npm package (`npm install -g @anthropic-ai/claude-code`) puts a `claude.cmd` launcher on your PATH. duet-send refuses to run a `.cmd` or `.bat` file, because a message passed through `cmd.exe` could be mangled or run as a command. Instead it uses a `claude.exe` found on your PATH, if there is one. Check what `claude` resolves to:
 
 ```powershell
 where.exe claude
@@ -196,7 +196,7 @@ Then send a real test message (Claude Code: ask the user first):
 bun run duet "duet-send test. Please reply in the chat if this arrived."
 ```
 
-`duet: sent to session_…` means Claude Code queued the message. Check your Duet chat for the coordinator's reply. Add `--verbose` only if you need the full session id or Claude Code's own output.
+`duet: sent to main (session_…)` means Claude Code queued the message. Check your Duet chat for the coordinator's reply. Add `--verbose` only if you need the full session id or Claude Code's own output.
 
 If it fails with "archived" or "Session not found", the id was stale (see the start of this step): talk to the coordinator in Duet, wait for it to rename the routes file, and send again.
 
@@ -483,7 +483,7 @@ Run `claude auth login` and sign in with your Claude account. An API key is not 
 **`Cloud sessions are disabled by your organization's policy`**
 On a Team or Enterprise plan, an organization owner has to allow cloud sessions in the Claude Code admin settings.
 
-**`... is a .cmd file and cannot be called safely` (Windows)**
+**`... is a .cmd or .bat file and cannot be called safely` (Windows)**
 See the Windows note in step 3. The dry run checks this too.
 
 **`claude was not found`**

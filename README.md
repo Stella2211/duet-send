@@ -108,7 +108,7 @@ If you use several Duet chats, each chat's coordinator keeps its own route in th
 ## Good to know
 
 - Anyone who has the file id can read the route names and session ids, and can see your Google account name and email address (Google shows the owner of a shared file). They can't edit the file (Viewer only), and they can't send to your sessions, because sending needs your own Claude sign-in. Still, keep the id to yourself and don't commit it. Never share the file with edit access: anyone who can edit it can rename it and redirect your messages.
-- On Windows, duet-send refuses `claude.cmd` (the npm launcher), because a message passed through `cmd.exe` could be mangled or run as a command. Install the native `claude.exe` instead.
+- On Windows, duet-send refuses `.cmd` and `.bat` files (npm installs `claude.cmd`), because a message passed through `cmd.exe` could be mangled or run as a command. If `DUET_CLAUDE_BIN` is unset or exactly `claude` and a `claude.exe` is also on your PATH, it uses that; otherwise install the native `claude.exe` and set `DUET_CLAUDE_BIN` to its path.
 - The message is limited to 8,000 characters. Line endings become `\n`, and other control characters except tab are removed.
 - Sending only queues the message. duet-send doesn't wait for the coordinator's answer; you'll see it in Duet.
 

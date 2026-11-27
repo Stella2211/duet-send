@@ -111,7 +111,7 @@ claude auth login
 claude --version
 ```
 
-**Windows での注意。** duet-send にはネイティブ版の `claude.exe` が必要です。npm 版（`npm install -g @anthropic-ai/claude-code`）は PATH に `claude.cmd` という起動用ファイルを置きますが、duet-send はこれを使わずに止まります。`cmd.exe` を通すと本文が壊れたり、コマンドとして実行されたりするおそれがあるためです。`claude` がどれを指しているか確認してください。
+**Windows での注意。** duet-send にはネイティブ版の `claude.exe` が必要です。npm 版（`npm install -g @anthropic-ai/claude-code`）は PATH に `claude.cmd` という起動用ファイルを置きますが、duet-send は `.cmd` や `.bat` のファイルを使いません。`cmd.exe` を通すと本文が壊れたり、コマンドとして実行されたりするおそれがあるためです。代わりに、PATH に `claude.exe` があればそちらを使い、なければ止まります。`claude` がどれを指しているか確認してください。
 
 ```powershell
 where.exe claude
@@ -196,7 +196,7 @@ message:
 bun run duet "duet-send のテストです。届いたらチャットで返事をください。"
 ```
 
-`duet: sent to session_…` と出れば、Claude Code がメッセージを届けています。返事は Duet のチャットで確認してください。セッションIDの全体や Claude Code 自身の出力が必要なときだけ、`--verbose` を付けてください。
+`duet: sent to main (session_…)` と出れば、Claude Code がメッセージを届けています。返事は Duet のチャットで確認してください。セッションIDの全体や Claude Code 自身の出力が必要なときだけ、`--verbose` を付けてください。
 
 「archived」や「Session not found」で失敗したときは、IDが古くなっています（この手順の最初を参照）。Duet でコーディネーターに話しかけ、ファイル名が付け替わるのを待ってから、もう一度送ってください。
 
@@ -483,7 +483,7 @@ Google ドライブが時間内に答えませんでした。ネットワーク�
 **`Cloud sessions are disabled by your organization's policy`**
 Team や Enterprise のプランでは、組織のオーナーが Claude Code の管理設定でクラウドセッションを許可する必要があります。
 
-**`... is a .cmd file and cannot be called safely`（Windows）**
+**`... is a .cmd or .bat file and cannot be called safely`（Windows）**
 手順3の Windows での注意を見てください。dry run でもこの確認をします。
 
 **`claude was not found`**
