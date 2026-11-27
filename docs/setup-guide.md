@@ -22,7 +22,7 @@ your script / bot / Claude Code
         ▼
    duet-send ── reads ──▶ the routes file's name (Google Drive, shared by link)
         │
-        │  claude -p "[tag] message" --cloud <session id>
+        │  claude -p --cloud <session id> -- "[tag] message"
         ▼
  Claude Duet coordinator (a cloud Claude Code session)
 ```
