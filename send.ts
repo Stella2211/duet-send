@@ -18,13 +18,15 @@
  * If sending fails and DUET_DISCORD_WEBHOOK is set, a short alert is posted there.
  */
 import { statSync } from "node:fs";
+import { homedir } from "node:os";
 import { FILE_ID_PATTERN, ID_PATTERN, RoutesError, driveTitleRoutesSource, loadRoutes, resolveRoute } from "./routes";
 
 const MAX_LEN = 8000;
 const DEFAULT_TAG = "[Claude Code]";
 const HOOK_TAG = "[Claude Code: Stop]";
-// A hook run gives up after this long, so it never hangs around.
-const HOOK_TIMEOUT_MS = 60_000;
+// A hook run gives up after this long, so it never hangs around. It is shorter than Claude
+// Code's default hook timeout (60 seconds), so duet-send reports its own timeout first.
+const HOOK_TIMEOUT_MS = 50_000;
 
 // In --hook mode every exit is 0, so a problem here never interrupts Claude Code.
 // Errors still go to stderr (and to Discord when sending fails).
@@ -135,7 +137,40 @@ function maskId(id: string): string {
 }
 
 function maskIdsIn(text: string): string {
-  return text.replace(/\b(?:session|cse)_[A-Za-z0-9]+/g, (m) => maskId(m));
+  // No word-boundary check: \b and a lookbehind on [A-Za-z0-9_] both skip an id that follows
+  // an underscore or a letter ("x_session_abc"), so an id is masked wherever it appears.
+  return text.replace(/(?:session|cse)_[A-Za-z0-9]+/g, (m) => maskId(m));
+}
+
+// Cuts text to at most `max` UTF-16 units without splitting a surrogate pair.
+function cutUnits(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  if (/[\uD800-\uDBFF]/.test(text[end - 1] ?? "") && /[\uDC00-\uDFFF]/.test(text[end] ?? "")) end--;
+  return text.slice(0, end);
+}
+
+// Replaces your home folder with "~", so a user name doesn't end up in a Discord alert.
+function shortenHome(text: string): string {
+  let home: string;
+  try {
+    home = homedir();
+  } catch {
+    return text;
+  }
+  if (home.length < 2) return text;
+  const forms = new Set([home]);
+  if (process.platform === "win32") {
+    forms.add(home.replaceAll("\\", "/"));
+    forms.add(home.replaceAll("/", "\\"));
+  }
+  // Only at a path boundary: "/home/al" must not turn "/home/alice/x" into "~ice/x".
+  let out = text;
+  for (const f of forms) {
+    const escaped = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`${escaped}(?=$|[\\\\/\\s"'\`])`, "g"), "~");
+  }
+  return out;
 }
 
 type Resolved = { id: string; source: string; route?: string; updatedAt?: string };
@@ -226,13 +261,16 @@ async function notifyDiscord(content: string) {
   const url = process.env.DUET_DISCORD_WEBHOOK;
   if (!url) return;
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: content.slice(0, 1900), allowed_mentions: { parse: [] } }),
+      body: JSON.stringify({ content: cutUnits(content, 1900), allowed_mentions: { parse: [] } }),
+      signal: AbortSignal.timeout(10_000),
     });
+    if (!res.ok) console.error(`duet: the Discord alert failed too: HTTP ${res.status}`);
   } catch (e) {
-    console.error(`duet: the Discord alert failed too: ${e}`);
+    // The error text could contain the webhook URL (a secret), so only its kind is shown.
+    console.error(`duet: the Discord alert failed too: ${e instanceof Error ? e.name : "error"}`);
   }
 }
 
@@ -301,105 +339,113 @@ async function hookMessage(): Promise<string | null> {
 }
 
 // ---------- main ----------
-const args = parseArgs(Bun.argv.slice(2));
-// Set before reporting an argument error, so that error exits 0 too in hook mode.
-hookMode = args.hook;
-if (args.error) fail(args.error, 2);
-// In hook mode, status lines go to stderr so stdout stays free for Claude Code.
-const log = hookMode ? console.error : console.log;
+// Any error nobody expected goes through exit(), so --hook still exits 0.
+async function main() {
+  const args = parseArgs(Bun.argv.slice(2));
+  // Set before reporting an argument error, so that error exits 0 too in hook mode.
+  hookMode = args.hook;
+  if (args.error) fail(args.error, 2);
+  // In hook mode, status lines go to stderr so stdout stays free for Claude Code.
+  const log = hookMode ? console.error : console.log;
 
-if (hookMode) {
-  setTimeout(() => {
-    console.error(`duet: the hook gave up after ${HOOK_TIMEOUT_MS / 1000} seconds`);
-    for (const c of children) c.kill();
-    exit(1);
-  }, HOOK_TIMEOUT_MS).unref();
-}
-
-let text: string;
-if (hookMode) {
-  const built = await hookMessage();
-  if (built === null) exit(0);
-  text = built;
-} else {
-  // Stdin is read only when no text was given: a blank argument is an empty message, and
-  // must not wait on a stdin that is open but never closed.
-  text = args.hasText ? args.text : await readStdin();
-}
-if (!text) fail('the message is empty. Usage: bun run duet "message"', 2);
-
-text = sanitize(text);
-if (text.length > MAX_LEN) fail(`the message is too long (${text.length} characters, limit ${MAX_LEN})`);
-
-// Prefix the tag. The message is passed to claude after "--", so even a tag or body starting
-// with "-" is never read as one of claude's options.
-const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
-const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
-const message = `${tag} ${text}`;
-
-const { id, source, route, updatedAt } = await resolveSessionId(args.to);
-// Checked before the dry run too, so a dry run fails the same way a real send would.
-const resolved = resolveClaude();
-const shownId = args.verbose ? id : maskId(id);
-const shownTo = route ? `${route} (${shownId})` : shownId;
-
-// Claude Code can't be started: print the reason, alert Discord (not on a dry run), then fail.
-// The Discord alert names only the file, not its full path (which would include your user name).
-async function cannotStart(reason: string, path?: string): Promise<never> {
-  const safe = maskIdsIn(reason);
-  console.error(`duet: ${safe}`);
-  if (!args.dryRun) {
-    // The path is cut to its file name before ids are masked, so masking can't hide it from the swap.
-    const short = path ? reason.split(path).join(path.split(/[\\/]/).filter(Boolean).pop() ?? "") : reason;
-    const shown = maskIdsIn(short);
-    await notifyDiscord(
-      `duet-send: could not start Claude Code.\n` +
-        `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${shown}\n\`\`\``,
-    );
+  if (hookMode) {
+    setTimeout(() => {
+      console.error(`duet: the hook gave up after ${HOOK_TIMEOUT_MS / 1000} seconds`);
+      for (const c of children) c.kill();
+      exit(1);
+    }, HOOK_TIMEOUT_MS).unref();
   }
-  return exit(1);
-}
-if ("error" in resolved) await cannotStart(resolved.error, resolved.path);
-const claude = (resolved as { bin: string }).bin;
 
-if (args.dryRun) {
-  console.log(
-    `to: ${shownTo}\n(read from: ${source})\n${updatedAt ? `updated: ${updatedAt}\n` : ""}claude: ${claude}\nmessage:\n${message}`,
+  let text: string;
+  if (hookMode) {
+    const built = await hookMessage();
+    if (built === null) exit(0);
+    text = built;
+  } else {
+    // Stdin is read only when no text was given: a blank argument is an empty message, and
+    // must not wait on a stdin that is open but never closed.
+    text = args.hasText ? args.text : await readStdin();
+  }
+  if (!text) fail('the message is empty. Usage: bun run duet "message"', 2);
+
+  text = sanitize(text);
+  if (text.length > MAX_LEN) fail(`the message is too long (${text.length} characters, limit ${MAX_LEN})`);
+
+  // Prefix the tag. The message is passed to claude after "--", so even a tag or body starting
+  // with "-" is never read as one of claude's options.
+  const defaultTag = hookMode ? HOOK_TAG : (process.env.DUET_TAG ?? DEFAULT_TAG);
+  const tag = sanitize(args.tag ?? defaultTag).trim() || DEFAULT_TAG;
+  const message = `${tag} ${text}`;
+
+  const { id, source, route, updatedAt } = await resolveSessionId(args.to);
+  // Checked before the dry run too, so a dry run fails the same way a real send would.
+  const resolved = resolveClaude();
+  const shownId = args.verbose ? id : maskId(id);
+  const shownTo = route ? `${route} (${shownId})` : shownId;
+
+  // Claude Code can't be started: print the reason, alert Discord (not on a dry run), then fail.
+  // The Discord alert names only the file, not its full path (which would include your user name).
+  async function cannotStart(reason: string, path?: string): Promise<never> {
+    const safe = maskIdsIn(reason);
+    console.error(`duet: ${safe}`);
+    if (!args.dryRun) {
+      // The path is cut to its file name before ids are masked, so masking can't hide it from the swap.
+      const short = path ? reason.split(path).join(path.split(/[\\/]/).filter(Boolean).pop() ?? "") : reason;
+      const shown = maskIdsIn(short);
+      await notifyDiscord(
+        `duet-send: could not start Claude Code.\n` +
+          `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${shown}\n\`\`\``,
+      );
+    }
+    return exit(1);
+  }
+  if ("error" in resolved) await cannotStart(resolved.error, resolved.path);
+  const claude = (resolved as { bin: string }).bin;
+
+  if (args.dryRun) {
+    console.log(
+      `to: ${shownTo}\n(read from: ${source})\n${updatedAt ? `updated: ${updatedAt}\n` : ""}claude: ${claude}\nmessage:\n${message}`,
+    );
+    exit(0);
+  }
+
+  let proc: ReturnType<typeof Bun.spawn<{ stdout: "pipe"; stderr: "pipe"; stdin: "ignore" }>>;
+  try {
+    proc = Bun.spawn([claude, "-p", "--cloud", id, "--", message], {
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+      // Marks this claude process, so a Stop hook running duet-send --hook skips it.
+      env: { ...process.env, DUET_HOOK: "1" },
+    });
+  } catch (e) {
+    await cannotStart(`could not start claude (${claude}): ${e instanceof Error ? e.message : String(e)}`, claude);
+  }
+  children.add(proc);
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (code === 0) {
+    // claude prints the session id and its URL; show them only with --verbose.
+    if (args.verbose && stdout.trim()) log(stdout.trim());
+    log(`duet: sent to ${shownId}`);
+    exit(0);
+  }
+
+  const raw = cutUnits(stderr.trim() || stdout.trim(), 800);
+  const detail = args.verbose ? raw : maskIdsIn(raw);
+  console.error(`duet: sending failed (exit ${code})\n${detail}`);
+  await notifyDiscord(
+    `duet-send: sending to Claude Duet failed (exit ${code}). The coordinator's session id may have changed.\n` +
+      `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${maskIdsIn(shortenHome(raw))}\n\`\`\``,
   );
-  exit(0);
+  exit(1);
 }
 
-let proc: ReturnType<typeof Bun.spawn<{ stdout: "pipe"; stderr: "pipe"; stdin: "ignore" }>>;
-try {
-  proc = Bun.spawn([claude, "-p", "--cloud", id, "--", message], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "ignore",
-    // Marks this claude process, so a Stop hook running duet-send --hook skips it.
-    env: { ...process.env, DUET_HOOK: "1" },
-  });
-} catch (e) {
-  await cannotStart(`could not start claude (${claude}): ${e instanceof Error ? e.message : String(e)}`, claude);
-}
-children.add(proc);
-const [stdout, stderr, code] = await Promise.all([
-  new Response(proc.stdout).text(),
-  new Response(proc.stderr).text(),
-  proc.exited,
-]);
-
-if (code === 0) {
-  // claude prints the session id and its URL; show them only with --verbose.
-  if (args.verbose && stdout.trim()) log(stdout.trim());
-  log(`duet: sent to ${shownId}`);
-  exit(0);
-}
-
-const raw = (stderr || stdout).trim().slice(0, 800);
-const detail = args.verbose ? raw : maskIdsIn(raw);
-console.error(`duet: sending failed (exit ${code})\n${detail}`);
-await notifyDiscord(
-  `duet-send: sending to Claude Duet failed (exit ${code}). The coordinator's session id may have changed.\n` +
-    `to: ${route ? `${route} (${maskId(id)})` : maskId(id)}\n\`\`\`\n${maskIdsIn(raw)}\n\`\`\``,
-);
-exit(1);
+main().catch((e) => {
+  console.error(`duet: ${e instanceof Error ? e.message : String(e)}`);
+  exit(1);
+});

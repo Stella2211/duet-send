@@ -101,7 +101,7 @@ If you use several Duet chats, each chat's coordinator keeps its own route in th
 | `DUET_ROUTES_FILE_ID` | The Drive file id of the routes file: the part after `/d/` in its link, or the `id=` value. The coordinator tells you. |
 | `DUET_SESSION_ID` | The session id itself. Used when `DUET_ROUTES_FILE_ID` is not set, and as a fallback (with a warning) when the routes file can't be read. It goes stale when the coordinator changes. |
 | `DUET_TAG` | Default tag put in front of each message. Default: `[Claude Code]`. Not used by `--hook`, whose tag is `[Claude Code: Stop]`; change it with `--tag`. |
-| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when the send itself (`claude -p ... --cloud`) fails, for example a stale or archived id, or when Claude Code can't be started (`claude` not found, or it fails to start). Not alerted, only printed to stderr: failing to read the routes file, a message that is too long, and the 60 second hook timeout. Session ids in the alert are shortened. |
+| `DUET_DISCORD_WEBHOOK` | Discord webhook URL to alert when the send itself (`claude -p ... --cloud`) fails, for example a stale or archived id, or when Claude Code can't be started (`claude` not found, or it fails to start). Not alerted, only printed to stderr: failing to read the routes file, a message that is too long, and the 50 second hook timeout. Session ids in the alert are shortened, and your home folder is shown as `~`. |
 | `DUET_CLAUDE_BIN` | Full path to `claude`. On Windows it must be `claude.exe`. Set it for scheduled runs. |
 | `DUET_HOOK` | When `1`, `--hook` does nothing. duet-send sets it on the `claude` it starts, so its own send never triggers the hook. |
 
