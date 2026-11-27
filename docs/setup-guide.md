@@ -2,7 +2,7 @@ English | [日本語](setup-guide.ja.md)
 
 # duet-send setup guide
 
-This guide installs duet-send on macOS, Linux or Windows. It is written so that a person can follow it, and so that Claude Code can follow it on the user's behalf.
+This guide installs duet-send on macOS, Linux or Windows. A person can follow it directly, or Claude Code can follow it on the user's behalf.
 
 > **For Claude Code:** work through the steps in order and run the check at the end of each step. Install software only with the official commands shown here. Don't write to the user's shell profile or environment variables, don't send a real message (step 6), and don't edit Claude Code's settings files (optional step 8), until the user says yes. duet-send shortens session ids in its output; don't run it with `--verbose`, and don't print, copy or store a full session id anywhere.
 >
@@ -27,7 +27,7 @@ your script / bot / Claude Code
  Claude Duet coordinator (a cloud Claude Code session)
 ```
 
-The coordinator keeps its session id in a routes table: one line of JSON that is the **file name** of one file in your Google Drive. It renames the file whenever its id changes (see [DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md)). It uses the name because Claude's Google Drive connector can change a file's name but not its content. The file is shared as "Anyone with the link" with the Viewer role. duet-send requests `https://drive.google.com/uc?export=download&id=<FILE_ID>` with plain HTTPS and no sign-in, and reads only the file name from the response (never the content), 15 seconds at most. The table looks like this:
+The coordinator keeps its session id in a routes table: one line of JSON that is the **file name** of one file in your Google Drive, renamed whenever its id changes (see [DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md)). The name, because Claude's Google Drive connector can rename a file but can't change its content. The file is shared as "Anyone with the link" with the Viewer role. duet-send requests `https://drive.google.com/uc?export=download&id=<FILE_ID>` over plain HTTPS with no sign-in, and reads only the file name from the response (never the content), with a 15 second timeout. The table looks like this:
 
 ```json
 {"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_..."}}
@@ -41,7 +41,7 @@ The coordinator keeps its session id in a routes table: one line of JSON that is
 - You need a Claude plan with Claude Code and cloud sessions (Pro, Max, Team, or Enterprise with the right seat). Sending with `--cloud` requires signing in with your Claude account; it doesn't work with an API key alone or with Amazon Bedrock, Google Vertex AI or other third-party providers.
 - After installing anything in the steps below, **open a new terminal** before running the next command, so the new program is found.
 
-To see what is already installed, run these one at a time (one that is missing prints "command not found"; that's fine):
+To see what is already installed, run these one at a time (a missing one prints "command not found"):
 
 ```sh
 git --version
@@ -167,15 +167,15 @@ Windows: run this in PowerShell, then open a new terminal.
 
 ## 6. Check it works
 
-The dry run below only checks that duet-send can **read** an id. It can't tell whether that id is still current: if the coordinator has been replaced and the routes file still holds the old id, the dry run passes and the real send fails with "archived" or "Session not found". When that happens, open Duet and say anything to the coordinator. It checks its own id when it starts and renames the routes file; then send again.
+The dry run below only checks that duet-send can **read** an id, not whether that id is still current. If the coordinator has been replaced and the routes file still holds the old id, the dry run passes but the real send fails with "archived" or "Session not found". In that case, open Duet and say anything to the coordinator: it checks its own id when it starts and renames the routes file. Then send again.
 
-First a dry run. It finds the session id and `claude`, and prints what it would send, but sends nothing:
+Start with a dry run, which finds the session id and `claude`, and prints what it would send, but sends nothing:
 
 ```sh
 bun run duet --dry-run "duet-send test"
 ```
 
-You should see something like this. The session id is shortened on purpose.
+You should see something like this (the session id is shortened on purpose):
 
 ```
 to: main (session_01Ab…xyz)
@@ -258,7 +258,7 @@ It holds the name of the folder Claude Code was working in (not the full path) a
 - Nothing is sent if Claude Code is closed or crashes in the middle of a turn, if your computer is offline, or if `claude` isn't signed in. When `claude -p ... --cloud` itself fails and `DUET_DISCORD_WEBHOOK` is set, you get the usual Discord alert (the alert also needs a network connection). The same goes when Claude Code can't be started at all (`claude` not found, or it fails to start). Problems before that, such as a routes file that can't be read, and the 60 second timeout only go to stderr, which nobody sees in hook mode.
 - Sending only queues the message. The coordinator reads it the next time it runs.
 
-So it is a reliable "a turn ended" signal while Claude Code is running normally, not a guarantee that every piece of work is reported.
+In short: a reliable "a turn ended" signal while Claude Code is running normally, but not a guarantee that every piece of work is reported.
 
 ### Where to put it
 
@@ -269,7 +269,7 @@ Use your **user settings**, so it works in every project on this computer:
 
 To use it in one project only, put the same block in that project's `.claude/settings.local.json` instead. Don't put it in a project's shared `.claude/settings.json`: the paths only exist on your computer, and that file is committed and read by everyone who opens the project.
 
-If the file already exists, add the `"hooks"` part to it instead of replacing the file. If it already has a `"hooks"` section, add the `"Stop"` entry inside it. If it already has a `"Stop"` list, add duet-send's entry to that list; don't replace the entries already there. Editing by hand is easy to get wrong, so on macOS and Linux you can let `jq` do it (see "Add it with jq" below).
+If the file already exists, add the `"hooks"` part to it instead of replacing the file. If it already has a `"hooks"` section, add the `"Stop"` entry inside it. If it already has a `"Stop"` list, add duet-send's entry to that list; don't replace the entries already there. Editing by hand is error-prone, so on macOS and Linux you can let `jq` do it (see "Add it with jq" below).
 
 `hooks/hooks.json` is the format for hooks bundled in a Claude Code [plugin](https://code.claude.com/docs/en/plugins/overview). For your own computer, `settings.json` is simpler; a plugin's `hooks/hooks.json` uses the same `{"hooks": {...}}` block, with an optional `"description"` beside it.
 
@@ -428,7 +428,7 @@ Please add this chat's route to the duet-send routes table, and check your own s
 
 3. Use it: `bun run duet --to <route> "message"`.
 
-Several sessions write the same file name, so they must not overwrite each other. That is why the request tells each coordinator to read the title and etag right before writing, change only its own key, and pass the etag to the update. Drive then refuses the write if the file changed in between, and the coordinator reads again and retries. After writing, it reads the name back and checks that it is valid JSON.
+Several sessions write the same file name, so they must not overwrite each other. That is why the request tells each coordinator to read the title and etag right before writing, change only its own key, and pass the etag to the update: Drive refuses the write if the file changed in between, and the coordinator reads again and retries. After writing, it reads the name back and checks that it is valid JSON.
 
 ### Skip the approval on every rename
 

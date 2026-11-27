@@ -2,7 +2,7 @@
 
 # duet-send 導入ガイド
 
-macOS、Linux、Windows に duet-send を入れる手順です。人が読みながら進めても、Claude Code がユーザーの代わりに進めても良いように書いています。
+macOS、Linux、Windows に duet-send を導入する手順です。人が読みながら進めることも、Claude Code に代わりに進めてもらうこともできます。
 
 > **Claude Code へ：** 手順を順番に進め、各手順の最後にある確認を実行してください。ソフトウェアはここに書いた公式のコマンドだけで入れてください。シェルの設定ファイルや環境変数への書き込み、実際のメッセージの送信（手順6）、Claude Code の設定ファイルの編集（任意の手順8）は、ユーザーの了承を得てから行ってください。duet-send は出力の中のセッションIDを短くして表示します。`--verbose` を付けて実行せず、セッションIDの全体を表示・コピー・保存しないでください。
 >
@@ -27,7 +27,7 @@ macOS、Linux、Windows に duet-send を入れる手順です。人が読みな
  Claude Duet のコーディネーター（クラウドの Claude Code セッション）
 ```
 
-コーディネーターは、自分のセッションIDをルーティング表（1行の JSON）にして、Google ドライブの1つのファイルの **ファイル名** にしています。IDが変わるたびにファイル名を付け替えます（[DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md) を参照）。ファイル名を使うのは、Claude の Google ドライブ コネクタがファイル名は変えられても、本文は変えられないためです。ファイルは「リンクを知っている全員」・閲覧者で共有します。duet-send は `https://drive.google.com/uc?export=download&id=<FILE_ID>` にサインインなしのふつうの HTTPS でアクセスし、レスポンスからファイル名だけを読みます（本文は読みません。最長15秒）。ルーティング表は次のような形です。
+コーディネーターは、自分のセッションIDをルーティング表（1行の JSON）として Google ドライブの1つのファイルの **ファイル名** に格納し、IDが変わるたびにファイル名を変更します（[DUET_INSTRUCTIONS.md](../DUET_INSTRUCTIONS.md) を参照）。ファイル名を使うのは、Claude の Google ドライブコネクタがファイル名は変更できても本文は変更できないためです。ファイルは「リンクを知っている全員」・閲覧者で共有します。duet-send は `https://drive.google.com/uc?export=download&id=<FILE_ID>` にサインインなしの通常の HTTPS でアクセスし、レスポンスからファイル名だけを読みます（本文は読みません。最長15秒）。ルーティング表は次の形式です。
 
 ```json
 {"version":1,"updated_at":"2026-11-23T03:30:00Z","default":"main","routes":{"main":"session_..."}}
@@ -41,7 +41,7 @@ macOS、Linux、Windows に duet-send を入れる手順です。人が読みな
 - Claude Code とクラウドセッションが使えるプランが必要です（Pro、Max、Team、または対応する席の Enterprise）。`--cloud` での送信には Claude アカウントでのサインインが必要で、APIキーだけの場合や、Amazon Bedrock・Google Vertex AI などの外部プロバイダー経由では使えません。
 - 以下の手順で何かを入れたら、次のコマンドを実行する前に **新しいターミナルを開いて** ください。そうしないと、入れたばかりのプログラムが見つからないことがあります。
 
-すでに入っているものを確かめるには、次を1行ずつ実行します（入っていないものは「command not found」になりますが、それで構いません）。
+インストール済みのものを確認するには、次を1行ずつ実行します（未インストールのものは「command not found」になります）。
 
 ```sh
 git --version
@@ -50,11 +50,11 @@ claude --version
 claude auth status
 ```
 
-`claude auth status` は Claude Code にサインイン済みかを表示します。入っているものの手順は飛ばして構いませんが、各手順の確認は実行してください。
+`claude auth status` は Claude Code にサインイン済みかどうかを表示します。インストール済みのものの手順は省略できますが、各手順の確認は実行してください。
 
 ## 1. git を入れる（または ZIP でダウンロードする）
 
-git があるか確認します。
+git がインストールされているか確認します。
 
 ```sh
 git --version
@@ -66,7 +66,7 @@ git --version
 - Linux：ディストリビューションのパッケージマネージャーで入れます。たとえば `sudo pacman -S git`（Arch）、`sudo apt install git`（Debian、Ubuntu）。
 - Windows（PowerShell）：`winget install --id Git.Git -e` を実行するか、[git-scm.com](https://git-scm.com/downloads/win) からダウンロードします。
 
-git を入れたくなければ、この手順は飛ばして構いません。手順4で ZIP をダウンロードできます。
+git をインストールしない場合はこの手順を省略できます。手順4で ZIP をダウンロードできます。
 
 ## 2. Bun を入れる
 
@@ -90,7 +90,7 @@ bun --version
 
 ## 3. Claude Code（ネイティブ版）を入れてサインインする
 
-`claude --version` がすでに動くなら入れ直しは不要です。ただし Windows の方は下の注意を読んでください。
+`claude --version` がすでに動作する場合は再インストール不要です。ただし Windows の場合は下の注意を読んでください。
 
 macOS と Linux：
 
@@ -167,7 +167,7 @@ Windows：PowerShell で次を実行して、新しいターミナルを開き�
 
 ## 6. 動作を確認する
 
-下の dry run で確かめられるのは、duet-send がIDを **読めるか** までです。そのIDがまだ有効かは分かりません。コーディネーターが入れ替わってルーティング表のファイルが古いIDのままだと、dry run は成功し、実際の送信が「archived」や「Session not found」で失敗します。そのときは Duet を開いてコーディネーターに何か話しかけてください。コーディネーターは起動時に自分のIDを確かめてファイル名を付け替えるので、そのあとでもう一度送ります。
+下の dry run で確認できるのは、duet-send がIDを **読み取れるか** までです。そのIDがまだ有効かどうかは分かりません。コーディネーターが入れ替わってルーティング表のファイルが古いIDのままだと、dry run は成功しても実際の送信が「archived」や「Session not found」で失敗します。その場合は Duet を開いてコーディネーターに何か話しかけてください。コーディネーターは起動時に自分のIDを確認してファイル名を変更するので、その後に再度送信してください。
 
 まずは送らずに試します。セッションIDと `claude` を探して、送る内容を表示するだけです。
 
@@ -175,7 +175,7 @@ Windows：PowerShell で次を実行して、新しいターミナルを開き�
 bun run duet --dry-run "duet-send のテスト"
 ```
 
-次のように表示されれば成功です。セッションIDはわざと短くしています。
+次のように表示されれば成功です。セッションIDは意図的に短縮して表示しています。
 
 ```
 to: main (session_01Ab…xyz)
@@ -186,7 +186,7 @@ message:
 [Claude Code] duet-send のテスト
 ```
 
-`to:` はルートとそのIDを示します。`read from: the routes file (Google Drive)` ならふだんどおりです。`DUET_SESSION_ID` と出たときは、その変数からIDを読んだという意味です。ルーティング表のファイルを設定していないか、読めなかったかのどちらかです（どちらかは stderr の警告でわかります）。`updated:` は、ルーティング表に `updated_at` があるときだけ表示されます。
+`to:` はルートとそのIDを示します。`read from: the routes file (Google Drive)` と表示されれば通常どおりです。`DUET_SESSION_ID` と出たときは、その変数からIDを読んだという意味です。ルーティング表のファイルを設定していないか、読めなかったかのどちらかです（どちらかは stderr の警告でわかります）。`updated:` は、ルーティング表に `updated_at` があるときだけ表示されます。
 
 エラーが出たら、下のトラブルシューティングを見てください。
 
@@ -198,7 +198,7 @@ bun run duet "duet-send のテストです。届いたらチャットで返事�
 
 `duet: sent to session_…` と出れば、Claude Code がメッセージを届けています。返事は Duet のチャットで確認してください。セッションIDの全体や Claude Code 自身の出力が必要なときだけ、`--verbose` を付けてください。
 
-「archived」や「Session not found」で失敗したときは、IDが古くなっています（この手順の最初を参照）。Duet でコーディネーターに話しかけ、ファイル名が付け替わるのを待ってから、もう一度送ってください。
+「archived」や「Session not found」で失敗した場合は、IDが古くなっています（この手順の最初を参照）。Duet でコーディネーターに話しかけ、ファイル名が変更されるのを待ってから再度送信してください。
 
 Stop hook（手順8）をすでに設定していて、このテストを Claude Code から実行すると、その Claude Code のターンが終わったときに `[Claude Code: Stop]` のメッセージがもう1通届きます。テストのコマンドの前に `DUET_HOOK=1` を付けても止まりません。hook を起動するのはあなたのコマンドではなく Claude Code だからです。避けたいときは、その Claude Code を `DUET_HOOK=1 claude` で起動してください（手順8を参照）。
 
@@ -223,7 +223,7 @@ execFile("bun", ["/path/to/duet-send/send.ts", "--tag", "[Discord bot]", message
 
 **定期実行（cron、launchd、タスクスケジューラ、ボットのサービスなど）。** これらは `~/.zshrc` やユーザーの PATH を読みません。すべてフルパスで書き、変数はジョブの中で設定してください。
 
-- `bun` のフルパス。`which bun`（macOS、Linux）か `(Get-Command bun).Source`（PowerShell）で確かめます。場所は Bun の入れ方で変わり、公式のインストーラーなら `~/.bun/bin/bun`、`%USERPROFILE%\.bun\bin\bun.exe` です
+- `bun` のフルパス。`which bun`（macOS、Linux）か `(Get-Command bun).Source`（PowerShell）で確認します。場所は Bun の入れ方で変わり、公式のインストーラーなら `~/.bun/bin/bun`、`%USERPROFILE%\.bun\bin\bun.exe` です
 - `DUET_CLAUDE_BIN` に `claude`（または `claude.exe`）のフルパス
 - `DUET_ROUTES_FILE_ID` にルーティング表のファイルの Drive ファイルID
 - `DUET_DISCORD_WEBHOOK` など、使っているほかの変数
@@ -258,7 +258,7 @@ I've fixed the failing test and pushed the branch. ...
 - ターンの途中で Claude Code を閉じた・落ちたとき、パソコンがオフラインのとき、`claude` がサインインしていないときは送られません。`claude -p ... --cloud` 自体が失敗し、`DUET_DISCORD_WEBHOOK` を設定していれば、いつもどおり Discord に知らせます（通知にもネットワークが必要です）。Claude Code をそもそも起動できないとき（`claude` が見つからない、起動に失敗する）も同じです。それより前の問題（ルーティング表のファイルを読めなかったときなど）と60秒のタイムアウトは stderr に出るだけで、hook では誰の目にも触れません。
 - 送信はメッセージを届けるだけです。コーディネーターは次に動いたときに読みます。
 
-つまり、Claude Code が普通に動いている限り「ターンが終わった」ことは確実に届きますが、どんな作業も必ず報告されるという保証ではありません。
+つまり、Claude Code が正常に動作している限り「ターンが終わった」ことは届きますが、すべての作業が必ず報告されるわけではありません。
 
 ### 書く場所
 
@@ -273,9 +273,9 @@ I've fixed the failing test and pushed the branch. ...
 
 `hooks/hooks.json` は、Claude Code の [プラグイン](https://code.claude.com/docs/ja/plugins/overview) に hook を入れるときの形式です。自分のパソコンで使うだけなら `settings.json` のほうが簡単です。プラグインの `hooks/hooks.json` でも、同じ `{"hooks": {...}}` の部分をそのまま使えます（横に任意の `"description"` を置けます）。
 
-### まず、2つのフルパスを確かめる
+### まず、2つのフルパスを確認する
 
-hook には、`bun` のフルパスと `send.ts` のフルパスが必要です。下の例をそのまま写さず、自分のパソコンで確かめてください。`bun` の場所は入れ方で変わります。公式のインストーラーなら `~/.bun/bin/` ですが、Homebrew、npm、バージョン管理ツールなどで入れた場合は別の場所になります。
+hook には、`bun` のフルパスと `send.ts` のフルパスが必要です。下の例をそのまま写さず、自分のパソコンで確認してください。`bun` の場所は入れ方で変わります。公式のインストーラーなら `~/.bun/bin/` ですが、Homebrew、npm、バージョン管理ツールなどで入れた場合は別の場所になります。
 
 macOS と Linux（2行目は duet-send のフォルダで実行します）：
 
@@ -297,7 +297,7 @@ Windows の PowerShell（2行目は duet-send のフォルダで実行します�
 
 ### 書く内容
 
-macOS と Linux（例のパスを、確かめた2つのパスに置き換えます）：
+macOS と Linux（例のパスを、確認した2つのパスに置き換えます）：
 
 ```json
 {
@@ -341,7 +341,7 @@ Windows（JSON の中では、パスの `\` を `\\` と書きます）：
 
 ### jq で追加する（macOS、Linux）
 
-`~/.claude/settings.json` がすでにあるとき、次のコマンドはバックアップを取ってから `hooks.Stop` に設定を1つ追加します。ほかの設定（ほかの Stop hook も含む）はそのまま残ります。最初の2行に、確かめた2つのパスを入れてください。
+`~/.claude/settings.json` がすでにあるとき、次のコマンドはバックアップを取ってから `hooks.Stop` に設定を1つ追加します。ほかの設定（ほかの Stop hook も含む）はそのまま残ります。最初の2行に、確認した2つのパスを入れてください。
 
 ```sh
 BUN=/Users/you/.bun/bin/bun
@@ -361,7 +361,7 @@ jq --arg bun "$BUN" --arg send "$SEND" \
 - `--hook` のとき、duet-send は必ず終了コード0で終わり、問題は stderr にだけ書きます。Claude Code を止めたり、Claude に作業を続けさせたりすることはありません。
 - Stop には `"matcher"` はいりません。
 
-**`claude -p`（非対話モード）の終わりにも知らせたいとき：** `claude -p` が終了するときに動いている async の hook は Claude Code が打ち切るので、メッセージが送られないことがあります。`"async": true` を外して、代わりに `"timeout": 90` を書いてください。Claude Code は送信（ふつう数秒）を待ってから終了します。
+**`claude -p`（非対話モード）の終わりにも知らせたいとき：** `claude -p` が終了するときに動いている async の hook は Claude Code が打ち切るので、メッセージが送られないことがあります。`"async": true` を外して、代わりに `"timeout": 90` を書いてください。Claude Code は送信（通常は数秒）を待ってから終了します。
 
 **エラー用の2つ目の設定（任意）。** API のエラーでターンが終わったときにも知りたいなら、`"Stop"` の隣に `"StopFailure"` を足し、同じ `"hooks"` の中身を書きます。メッセージには（エラーの種類がわかるときは）その種類が入ります。
 
@@ -379,7 +379,7 @@ hook は Claude Code の環境変数を引き継ぐので、手順5の変数は�
 
 ### 確認する
 
-1. `"command"` と `"args"` に書いた2つのパスをそのまま使い、Claude Code が渡す内容のサンプルで hook を手で動かします。書いたパスが正しいかを確かめるもので、何も送りません。
+1. `"command"` と `"args"` に書いた2つのパスをそのまま使い、Claude Code が渡す内容のサンプルで hook を手で動かします。書いたパスが正しいかを確認するもので、何も送りません。
 
    macOS と Linux：
 
@@ -395,8 +395,8 @@ hook は Claude Code の環境変数を引き継ぐので、手順5の変数は�
 
    `--hook` のときは終了コードが必ず0になるので、出力を見てください。`[Claude Code: Stop]` で始まる `message:` が出れば成功です。`duet:` で始まる行が出たら、そこに原因が書いてあります。
 
-2. Claude Code で `/hooks` と入力し、ユーザー設定に `Stop` が出ているか確かめます。`settings.json` の変更はふつう自動で読み込まれます。出ていなければ、新しいセッションを始めてください。
-3. Claude Code に短いことを頼み、Duet に `[Claude Code: Stop]` のメッセージが届くか確かめます。
+2. Claude Code で `/hooks` と入力し、ユーザー設定に `Stop` が出ているか確認します。`settings.json` の変更は通常自動で読み込まれます。出ていなければ、新しいセッションを始めてください。
+3. Claude Code に短いことを頼み、Duet に `[Claude Code: Stop]` のメッセージが届くか確認します。
 
 ### 通知を減らす、ループを防ぐ
 
@@ -421,14 +421,14 @@ duet-send のルーティング表に、このチャットのルートを追加�
 - ルーティング表は Google ドライブのファイル（ファイルID: <ROUTES_FILE_ID>）のファイル名に、1行の JSON で入っています。このチャットのルート名は "<ROUTE_NAME>" です。
 - get_session（session_id なし）で自分のセッションIDを読んでください。
 - 書き換える直前に、ファイルのメタデータからタイトルと etag を読み直し、routes の "<ROUTE_NAME>" と updated_at だけを変えてください。ほかのルートは変えないでください。更新には読んだ etag を渡し、失敗したら読み直してやり直してください。新しいファイルは作らないでください。
-- 書いたあとは、ファイル名を読み返して、正しい JSON で自分のIDが入っているか確かめてください。
+- 書いたあとは、ファイル名を読み返して、正しい JSON で自分のIDが入っているか確認してください。
 - このチャットに毎時1回、決まった一文（例：定時のセッションID確認の合図です。）だけを投稿するルーティンを作ってください。その一文が来たら上の確認をし、IDが変わっていなければ何もしないでください。
 - ファイルID、ルート名、合図の一文をメモリに残してください。
 ```
 
 3. 使うとき：`bun run duet --to <ルート> "メッセージ"`
 
-複数のセッションが同じファイル名に書き込むので、互いに上書きしてはいけません。そのため、上の依頼では、書き込む直前にタイトルと etag を読み直し、自分のキーだけを変え、etag を渡して更新するよう伝えています。間にファイルが変わっていたら Drive が書き込みを断るので、コーディネーターは読み直してやり直します。書いたあとは、ファイル名を読み返して、正しい JSON になっているか確かめます。
+複数のセッションが同じファイル名に書き込むため、互いに上書きしないよう注意が必要です。そのため上の依頼では、書き込む直前にタイトルと etag を読み直し、自分のキーだけを変更し、etag を渡して更新するよう伝えています。間にファイルが変更されていた場合は Drive が書き込みを拒否するので、コーディネーターは読み直して再試行します。書き込み後はファイル名を読み返し、正しい JSON になっているか確認します。
 
 ### 書き換えのたびの承認をなくす
 
@@ -458,25 +458,25 @@ duet-send を動かすシェルやジョブで `DUET_ROUTES_FILE_ID`（手順5�
 値はIDだけ（英数字、`-`、`_`）にしてください。リンク全体ではありません。ファイルのリンクの `/d/` の後ろの部分、または `id=` の値です。
 
 **`could not read the routes file (HTTP ...). Check the file id, and that the file is shared as "Anyone with the link" with the Viewer role` または `Google returned a web page instead of the routes file. ...`**
-Google がファイルを渡しませんでした。ファイルがリンク共有になっていない（このとき Google はサインインのページを返します）か、IDが違います。ドライブで **共有 → 一般的なアクセス** を開き、**リンクを知っている全員**・権限 **閲覧者** にして、IDをコーディネーターに確かめてください。
+Google がファイルを渡しませんでした。ファイルがリンク共有になっていない（このとき Google はサインインのページを返します）か、IDが違います。ドライブで **共有 → 一般的なアクセス** を開き、**リンクを知っている全員**・権限 **閲覧者** にして、IDをコーディネーターに確認してください。
 
 **`... is not valid JSON`**
-ファイル名が1行のルーティング表の JSON になっていません。誰かが手で名前を変えたのかもしれません。コーディネーターにファイル名を付け直してもらってください。ドライブでは長い名前が変に表示されることがありますが、それで正常です。
+ファイル名が1行のルーティング表の JSON になっていません。誰かが手で名前を変えたのかもしれません。コーディネーターにファイル名を再設定してもらってください。ドライブでは長い名前が崩れて表示されることがありますが、正常です。
 
 **`unknown route ...`、`"default" ... is not in "routes"` または `unsupported routes version ...`**
-ルーティング表に、表にない名前や、この duet-send が知らないバージョンが入っています。コーディネーターに表を直してもらうか、duet-send を更新（`git pull`）してください。
+ルーティング表に、表にない名前や、この duet-send が対応していないバージョンが入っています。コーディネーターに表を修正してもらうか、duet-send を更新（`git pull`）してください。
 
 **`route "..." does not contain a session id`**
-そのルートの値がセッションID（`session_` または `cse_` で始まるもの）ではありません。コーディネーターに書き直してもらってください。
+そのルートの値がセッションID（`session_` または `cse_` で始まるもの）ではありません。コーディネーターに修正してもらってください。
 
 **`could not read the routes file (Google Drive): ...`**
-Google ドライブから答えが返る前に通信が失敗しました。多くは、ネットワークが切れているか、プロキシやファイアウォールが `drive.google.com` や `drive.usercontent.google.com` を止めています。ネットワークを確かめて、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。
+Google ドライブから答えが返る前に通信が失敗しました。多くは、ネットワークが切れているか、プロキシやファイアウォールが `drive.google.com` や `drive.usercontent.google.com` を止めています。ネットワークを確認して、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。
 
 **`timed out after 15 seconds reading the routes file`**
-Google ドライブが時間内に答えませんでした。ネットワークを確かめて、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。
+Google ドライブが時間内に答えませんでした。ネットワークを確認して、やり直してください。`DUET_SESSION_ID` を設定していれば、警告を出してそれを使います。
 
 **`cloud session session_… is archived and cannot accept new messages` または `Session not found`**
-コーディネーターが入れ替わったのに、ルーティング表のファイルが古いIDのままです。Duet を開いて何か話しかけてください。新しいコーディネーターは起動時に自分のIDを確認し、ファイル名を付け替えます。1時間ごとの合図を設定している場合は、1時間ほどで自動的に直ります。（直らないときは、定期実行のプロンプトを見直すようコーディネーターに頼んでください。以前の版は定期実行の中でIDを確かめる作りで、黙って失敗していました。）`DUET_SESSION_ID` を使っている場合は、その値を更新してください。
+コーディネーターが入れ替わったのに、ルーティング表のファイルが古いIDのままです。Duet を開いて何か話しかけてください。新しいコーディネーターは起動時に自分のIDを確認し、ファイル名を付け替えます。1時間ごとの合図を設定している場合は、1時間ほどで自動的に解消します。（解消しない場合は、定期実行のプロンプトを見直すようコーディネーターに依頼してください。以前の版は定期実行の中でIDを確認する作りで、静かに失敗していました。）`DUET_SESSION_ID` を使っている場合は、その値を更新してください。
 
 **`Unable to get organization UUID`、または「Cloud sessions need a claude.ai sign-in」**
 `claude auth login` で Claude アカウントにサインインしてください。APIキーだけでは使えません。
